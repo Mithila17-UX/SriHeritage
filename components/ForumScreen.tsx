@@ -1,0 +1,366 @@
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
+import { Card, CardContent, CardHeader } from './ui/card';
+import { Button } from './ui/button';
+import { Badge } from './ui/badge';
+// Note: Replace lucide-react icons with React Native compatible icons
+// Note: Avatar component would need React Native conversion
+// import { Avatar, AvatarFallback } from './ui/avatar';
+// import { Heart, MessageCircle, Share2, Plus, Filter } from 'lucide-react';
+// import { ImageWithFallback } from './figma/ImageWithFallback';
+
+interface ForumScreenProps {
+  user: { name: string; email: string } | null;
+}
+
+const forumPosts = [
+  {
+    id: 1,
+    author: 'Samantha Perera',
+    avatar: 'SP',
+    time: '2h ago',
+    title: 'Amazing visit to Sigiriya!',
+    content: 'Just completed the climb to the top of Sigiriya Rock Fortress. The frescoes are absolutely breathtaking and the view from the top is unforgettable. Highly recommend going early morning to avoid crowds.',
+    image: 'https://images.unsplash.com/photo-1571715268652-3c2247e38d3e?w=400&h=200&fit=crop',
+    likes: 24,
+    comments: 8,
+    tags: ['Sigiriya', 'Ancient Sites', 'Photography']
+  },
+  {
+    id: 2,
+    author: 'Rajesh Fernando',
+    avatar: 'RF',
+    time: '5h ago',
+    title: 'Traditional mask making workshop',
+    content: 'Attended a traditional mask making workshop in Ambalangoda today. Learning about the cultural significance of each mask and the intricate craftsmanship involved was fascinating.',
+    likes: 18,
+    comments: 12,
+    tags: ['Traditional Arts', 'Masks', 'Culture']
+  },
+  {
+    id: 3,
+    author: 'Nisha Silva',
+    avatar: 'NS',
+    time: '1d ago',
+    title: 'Kandy Esala Perahera experience',
+    content: 'The Kandy Esala Perahera was absolutely magical! The procession of elephants, dancers, and drummers through the streets was a spiritual and cultural feast for the senses.',
+    image: 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=400&h=200&fit=crop',
+    likes: 42,
+    comments: 15,
+    tags: ['Festivals', 'Kandy', 'Culture']
+  }
+];
+
+export function ForumScreen({ user }: ForumScreenProps) {
+  const [filter, setFilter] = useState<'all' | 'my-posts' | 'popular'>('all');
+
+  return (
+    <View style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerContent}>
+          <View style={styles.headerText}>
+            <Text style={styles.headerTitle}>Community Forum</Text>
+            <Text style={styles.headerSubtitle}>Share your heritage experiences</Text>
+          </View>
+          <TouchableOpacity style={styles.newPostButton}>
+            <Text style={styles.newPostIcon}>➕</Text>
+            <Text style={styles.newPostText}>New Post</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Filter Tabs */}
+      <View style={styles.filterContainer}>
+        <View style={styles.filterTabs}>
+          {[
+            { key: 'all', label: 'All' },
+            { key: 'my-posts', label: 'My Posts' },
+            { key: 'popular', label: 'Popular' }
+          ].map((tab) => (
+            <TouchableOpacity
+              key={tab.key}
+              style={[
+                styles.filterTab,
+                filter === tab.key && styles.activeFilterTab
+              ]}
+              onPress={() => setFilter(tab.key as any)}
+            >
+              <Text style={[
+                styles.filterTabText,
+                filter === tab.key && styles.activeFilterTabText
+              ]}>
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+          <TouchableOpacity style={styles.filterButton}>
+            <Text style={styles.filterIcon}>🔽</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Posts */}
+      <ScrollView style={styles.postsContainer} contentContainerStyle={styles.postsContent}>
+        {forumPosts.map((post) => (
+          <Card key={post.id} style={styles.postCard}>
+            <CardHeader style={styles.postHeader}>
+              <View style={styles.authorRow}>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{post.avatar}</Text>
+                </View>
+                <View style={styles.authorInfo}>
+                  <Text style={styles.authorName}>{post.author}</Text>
+                  <Text style={styles.postTime}>{post.time}</Text>
+                </View>
+              </View>
+            </CardHeader>
+            
+            <CardContent style={styles.postContent}>
+              <Text style={styles.postTitle}>{post.title}</Text>
+              <Text style={styles.postText}>{post.content}</Text>
+              
+              {post.image && (
+                <View style={styles.imageContainer}>
+                  <Image
+                    source={{ uri: post.image }}
+                    style={styles.postImage}
+                    resizeMode="cover"
+                  />
+                </View>
+              )}
+              
+              <View style={styles.tagsContainer}>
+                {post.tags.map((tag, index) => (
+                  <Badge key={index} variant="secondary" style={styles.tag}>
+                    <Text style={styles.tagText}>#{tag}</Text>
+                  </Badge>
+                ))}
+              </View>
+              
+              <View style={styles.actionsContainer}>
+                <View style={styles.leftActions}>
+                  <TouchableOpacity style={styles.actionButton}>
+                    <Text style={styles.heartIcon}>❤️</Text>
+                    <Text style={styles.actionText}>{post.likes}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.actionButton}>
+                    <Text style={styles.commentIcon}>💬</Text>
+                    <Text style={styles.actionText}>{post.comments}</Text>
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity style={styles.actionButton}>
+                  <Text style={styles.shareIcon}>📤</Text>
+                  <Text style={styles.actionText}>Share</Text>
+                </TouchableOpacity>
+              </View>
+            </CardContent>
+          </Card>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F9FAFB', // gray-50
+  },
+  header: {
+    backgroundColor: '#EA580C', // orange-600 (gradient approximation)
+    paddingTop: 40, // Safe area top
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  headerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  headerText: {
+    flex: 1,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: '#FED7AA', // orange-100
+  },
+  newPostButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    gap: 4,
+  },
+  newPostIcon: {
+    fontSize: 16,
+    color: '#FFFFFF',
+  },
+  newPostText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    fontWeight: '500',
+  },
+  // Filter Tabs
+  filterContainer: {
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB', // gray-200
+    paddingHorizontal: 16,
+    height: 50, // Set a fixed height for vertical centering
+    justifyContent: 'center', // Center content vertically
+  },
+  filterTabs: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  filterTab: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: 'transparent',
+  },
+  activeFilterTab: {
+    backgroundColor: '#EA580C', // orange-600
+  },
+  filterTabText: {
+    fontSize: 14,
+    color: '#374151', // gray-700
+    fontWeight: '500',
+  },
+  activeFilterTabText: {
+    color: '#FFFFFF',
+  },
+  filterButton: {
+    marginLeft: 'auto',
+    padding: 8,
+  },
+  filterIcon: {
+    fontSize: 16,
+  },
+  // Posts
+  postsContainer: {
+    flex: 1,
+  },
+  postsContent: {
+    padding: 16,
+    gap: 16,
+  },
+  postCard: {
+    backgroundColor: '#FFFFFF',
+  },
+  postHeader: {
+    paddingBottom: 12,
+  },
+  authorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FED7AA', // orange-100
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#C2410C', // orange-700
+  },
+  authorInfo: {
+    flex: 1,
+  },
+  authorName: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#111827', // gray-900
+    marginBottom: 2,
+  },
+  postTime: {
+    fontSize: 14,
+    color: '#6B7280', // gray-500
+  },
+  postContent: {
+    paddingTop: 0,
+  },
+  postTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827', // gray-900
+    marginBottom: 8,
+  },
+  postText: {
+    fontSize: 14,
+    color: '#374151', // gray-700
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  imageContainer: {
+    marginBottom: 12,
+  },
+  postImage: {
+    width: '100%',
+    height: 192,
+    borderRadius: 8,
+  },
+  tagsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  tag: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  tagText: {
+    fontSize: 12,
+  },
+  actionsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6', // gray-100
+  },
+  leftActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 4,
+  },
+  heartIcon: {
+    fontSize: 16,
+  },
+  commentIcon: {
+    fontSize: 16,
+  },
+  shareIcon: {
+    fontSize: 16,
+  },
+  actionText: {
+    fontSize: 14,
+    color: '#6B7280', // gray-500
+  },
+});
