@@ -221,6 +221,7 @@ export function AllPlacesScreen({ user, onNavigateToSite, favoriteSites, visited
           <Text style={styles.searchIcon}>🔍</Text>
           <Input
             placeholder="Search places, locations, or categories..."
+            placeholderTextColor="#A7F3D0" // A light green that complements the teal
             value={searchQuery}
             onChangeText={setSearchQuery}
             style={styles.searchInput}
@@ -339,40 +340,30 @@ export function AllPlacesScreen({ user, onNavigateToSite, favoriteSites, visited
                           </View>
 
                           <Text style={styles.placeDescription} numberOfLines={2}>{place.description}</Text>
-
+                          
                           <View style={styles.placeFooter}>
                             <View style={styles.placeMetadata}>
                               <Badge variant="secondary" style={styles.categoryBadge}>
                                 <Text style={styles.categoryText}>{place.category}</Text>
                               </Badge>
-                              {place.distance && (
-                                <Text style={styles.distanceText}>{place.distance}</Text>
-                              )}
                               {isVisited && (
                                 <Badge style={styles.visitedLabel}>
                                   <Text style={styles.visitedLabelText}>Visited</Text>
                                 </Badge>
                               )}
                             </View>
-                            
                             <TouchableOpacity
                               onPress={(e) => {
                                 e.stopPropagation();
-                                handleGetDirections(place);
+                                onNavigateToSite(place);
                               }}
-                              style={styles.directionsButton}
+                              style={styles.detailsButton}
                             >
-                              <Text style={styles.directionsIcon}>🧭</Text>
-                              <Text style={styles.directionsText}>Directions</Text>
+                              <Text style={styles.detailsButtonText}>View Details</Text>
                             </TouchableOpacity>
                           </View>
                         </View>
                       </View>
-                      
-                      {/* Separator */}
-                      {index < filteredAndSortedPlaces.length - 1 && (
-                        <View style={styles.separator} />
-                      )}
                     </CardContent>
                   </Card>
                 </TouchableOpacity>
@@ -391,8 +382,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB', // gray-50
   },
   header: {
-    backgroundColor: '#EA580C', // orange-600 (gradient approximation)
-    paddingTop: 40, // Safe area top
+    backgroundColor: '#0D9488', // A vibrant teal color
+    paddingTop: 32,
     paddingHorizontal: 16,
     paddingBottom: 16,
   },
@@ -406,33 +397,36 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 22,
+    fontWeight: '700',
     color: '#FFFFFF',
     marginBottom: 4,
   },
   headerSubtitle: {
     fontSize: 14,
-    color: '#FED7AA', // orange-100
+    color: '#CCFBF1', // A light teal for the subtitle
   },
   headerBadge: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     borderColor: 'rgba(255, 255, 255, 0.3)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
   headerBadgeText: {
     color: '#FFFFFF',
     fontSize: 12,
+    fontWeight: '500',
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(0, 0, 0, 0.15)',
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 2,
+    paddingVertical: 8,
   },
   searchIcon: {
-    fontSize: 16,
+    fontSize: 18,
     color: 'rgba(255, 255, 255, 0.7)',
     marginRight: 8,
   },
@@ -512,11 +506,13 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   placeCardContent: {
-    padding: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
   },
   placeRow: {
     flexDirection: 'row',
     gap: 16,
+    alignItems: 'center',
   },
   thumbnailContainer: {
     position: 'relative',
@@ -552,6 +548,7 @@ const styles = StyleSheet.create({
   },
   placeContent: {
     flex: 1,
+    justifyContent: 'space-between',
     gap: 8,
   },
   placeHeader: {
@@ -601,60 +598,58 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#374151', // gray-700
     lineHeight: 20,
+    marginBottom: 8,
   },
   placeFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 8,
   },
   placeMetadata: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    flex: 1,
+    flexShrink: 1,
+    flexWrap: 'wrap',
   },
   categoryBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#F3F4F6', // gray-100
   },
   categoryText: {
     fontSize: 12,
+    color: '#374151', // gray-700
   },
   distanceText: {
     fontSize: 14,
     color: '#6B7280', // gray-500
+    alignItems: 'center',
+  },
+  distanceIcon: {
+    fontSize: 12,
   },
   visitedLabel: {
     backgroundColor: '#DCFCE7', // green-100
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   visitedLabelText: {
     fontSize: 12,
     color: '#166534', // green-800
   },
-  directionsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  detailsButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderWidth: 1,
     borderColor: '#FED7AA', // orange-200
-    borderRadius: 6,
+    borderRadius: 8,
     backgroundColor: '#FFF7ED', // orange-50
   },
-  directionsIcon: {
+  detailsButtonText: {
     fontSize: 14,
-  },
-  directionsText: {
-    fontSize: 14,
-    color: '#EA580C', // orange-600
+    color: '#C2410C', // orange-700
     fontWeight: '500',
-  },
-  separator: {
-    height: 1,
-    backgroundColor: '#F3F4F6', // gray-100
-    marginTop: 16,
   },
 });

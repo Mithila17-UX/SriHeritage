@@ -53,7 +53,7 @@ export function SignupScreen({ onSignup, onNavigateToLogin }: SignupScreenProps)
         <CardContent style={styles.content}>
           <View style={styles.form}>
             <View style={styles.inputGroup}>
-              <Label>Full Name</Label>
+              <Label style={styles.label}>Full Name</Label>
               <Input
                 placeholder="Enter your full name"
                 value={fullName}
@@ -63,7 +63,7 @@ export function SignupScreen({ onSignup, onNavigateToLogin }: SignupScreenProps)
             </View>
             
             <View style={styles.inputGroup}>
-              <Label>Email Address</Label>
+              <Label style={styles.label}>Email Address</Label>
               <Input
                 placeholder="Enter your email"
                 value={email}
@@ -75,7 +75,7 @@ export function SignupScreen({ onSignup, onNavigateToLogin }: SignupScreenProps)
             </View>
             
             <View style={styles.inputGroup}>
-              <Label>Password</Label>
+              <Label style={styles.label}>Password</Label>
               <Input
                 placeholder="Create a password"
                 value={password}
@@ -86,7 +86,7 @@ export function SignupScreen({ onSignup, onNavigateToLogin }: SignupScreenProps)
             </View>
             
             <View style={styles.inputGroup}>
-              <Label>Confirm Password</Label>
+              <Label style={styles.label}>Confirm Password</Label>
               <Input
                 placeholder="Confirm your password"
                 value={confirmPassword}
@@ -103,17 +103,15 @@ export function SignupScreen({ onSignup, onNavigateToLogin }: SignupScreenProps)
                 style={styles.checkbox}
               />
               <View style={styles.termsContainer}>
-                <Text style={styles.termsText}>
-                  I agree to the{' '}
-                  <TouchableOpacity>
-                    <Text style={styles.termsLink}>Terms of Service</Text>
-                  </TouchableOpacity>
-                  {' '}and{' '}
-                  <TouchableOpacity>
-                    <Text style={styles.termsLink}>Privacy Policy</Text>
-                  </TouchableOpacity>
-                  .
-                </Text>
+                <Text style={styles.termsText}>I agree to the </Text>
+                <TouchableOpacity>
+                  <Text style={styles.termsLink}>Terms of Service</Text>
+                </TouchableOpacity>
+                <Text style={styles.termsText}> and </Text>
+                <TouchableOpacity>
+                  <Text style={styles.termsLink}>Privacy Policy</Text>
+                </TouchableOpacity>
+                <Text style={styles.termsText}>.</Text>
               </View>
             </View>
             
@@ -127,12 +125,10 @@ export function SignupScreen({ onSignup, onNavigateToLogin }: SignupScreenProps)
           </View>
           
           <View style={styles.loginContainer}>
-            <Text style={styles.loginText}>
-              Already have an account?{' '}
-              <TouchableOpacity onPress={onNavigateToLogin}>
-                <Text style={styles.loginLink}>Login</Text>
-              </TouchableOpacity>
-            </Text>
+            <Text style={styles.loginText}>Already have an account? </Text>
+            <TouchableOpacity onPress={onNavigateToLogin}>
+              <Text style={styles.loginLink}>Login</Text>
+            </TouchableOpacity>
           </View>
         </CardContent>
       </Card>
@@ -143,7 +139,7 @@ export function SignupScreen({ onSignup, onNavigateToLogin }: SignupScreenProps)
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFF7ED', // Equivalent to bg-gradient-to-br from-amber-50 via-orange-50 to-red-50
+    backgroundColor: '#F0F9FF', // A light, inviting blue shade
   },
   contentContainer: {
     flexGrow: 1,
@@ -154,7 +150,15 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 400,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    backgroundColor: '#FFFFFF', // Clean white background for the card
+    borderRadius: 24, // Softer, more modern rounded corners
+    shadowColor: '#0EA5E9',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 24,
+    elevation: 16,
+    borderWidth: 1,
+    borderColor: '#E0F2FE',
   },
   header: {
     alignItems: 'center',
@@ -168,10 +172,10 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#F59E0B', // amber-500
+    backgroundColor: '#0EA5E9', // Sky blue
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
+    shadowColor: '#0284C7',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -181,7 +185,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: '#EA580C', // orange-600
+    backgroundColor: '#0284C7', // A deeper sky blue
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -189,7 +193,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#DC2626', // red-600
+    backgroundColor: '#0369A1', // An even deeper sky blue
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -205,37 +209,40 @@ const styles = StyleSheet.create({
     width: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: '#B91C1C', // red-700
+    backgroundColor: '#075985', // The deepest sky blue
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#111827', // gray-900
+    color: '#075985', // Dark blue for high contrast
     marginBottom: 4,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 20,
-    color: '#1F2937', // gray-800
+    color: '#0369A1', // Medium blue for subheadings
     marginBottom: 8,
     textAlign: 'center',
   },
   description: {
     fontSize: 16,
-    color: '#4B5563', // gray-600
+    color: '#0284C7', // Lighter blue for descriptions
     textAlign: 'center',
   },
   content: {
     gap: 24,
+    paddingBottom: 24,
   },
   form: {
     gap: 16,
   },
   inputGroup: {
     gap: 8,
+  label: {
+    color: '#075985',
+    fontWeight: '600',
   },
-  input: {
-    borderColor: '#D1D5DB', // gray-300
+    borderColor: '#93C5FD', // A calm blue for the input border
   },
   checkboxContainer: {
     flexDirection: 'row',
@@ -247,35 +254,41 @@ const styles = StyleSheet.create({
   },
   termsContainer: {
     flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
   },
   termsText: {
     fontSize: 14,
-    color: '#4B5563', // gray-600
+    color: '#075985', // Dark blue for better readability
     lineHeight: 20,
   },
   termsLink: {
-    color: '#EA580C', // orange-600
+    color: '#0EA5E9', // A vibrant sky blue for links
     fontWeight: '500',
+    fontSize: 14,
+    lineHeight: 20,
   },
   signupButton: {
-    backgroundColor: '#EA580C', // orange-600
+    backgroundColor: '#0EA5E9', // A vibrant sky blue for the main button
     width: '100%',
     justifyContent: 'center',
     alignItems: 'center',
   },
   signupButtonDisabled: {
-    backgroundColor: '#FB923C', // orange-400
+    backgroundColor: '#7DD3FC', // A lighter, disabled-looking blue
   },
   loginContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   loginText: {
     fontSize: 16,
-    color: '#4B5563', // gray-600
-    textAlign: 'center',
+    color: '#075985', // Dark blue for better readability
   },
   loginLink: {
-    color: '#EA580C', // orange-600
+    color: '#0EA5E9', // A vibrant sky blue for links
     fontWeight: '500',
   },
 });

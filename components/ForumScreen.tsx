@@ -168,8 +168,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB', // gray-50
   },
   header: {
-    backgroundColor: '#EA580C', // orange-600 (gradient approximation)
-    paddingTop: 40, // Safe area top
+    backgroundColor: '#0EA5E9', // A vibrant sky blue from the login theme
+    paddingTop: 32,
     paddingHorizontal: 16,
     paddingBottom: 16,
   },
@@ -182,14 +182,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 22,
+    fontWeight: '700',
     color: '#FFFFFF',
     marginBottom: 4,
   },
   headerSubtitle: {
     fontSize: 14,
-    color: '#FED7AA', // orange-100
+    color: '#E0F2FE', // A light sky blue for the subtitle
   },
   newPostButton: {
     flexDirection: 'row',
@@ -197,11 +197,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-    gap: 4,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
   },
   newPostIcon: {
     fontSize: 16,

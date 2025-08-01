@@ -40,6 +40,7 @@ export function MainApp({ user, onLogout }: MainAppProps) {
   const [selectedSite, setSelectedSite] = useState<SiteData | null>(null);
   const [favoriteSites, setFavoriteSites] = useState<number[]>([]);
   const [visitedSites, setVisitedSites] = useState<number[]>([1, 3]); // Mock visited sites
+  const [plannedSites, setPlannedSites] = useState<number[]>([]);
   const [offlineMode, setOfflineMode] = useState(false);
 
   const handleNavigateToSite = (site: SiteData) => {
@@ -60,10 +61,17 @@ export function MainApp({ user, onLogout }: MainAppProps) {
     );
   };
 
-  const markAsVisited = (siteId: number) => {
-    setVisitedSites(prev => 
-      prev.includes(siteId) ? prev : [...prev, siteId]
-    );
+  const handleVisitStatusChange = (siteId: number, status: 'visited' | 'not-visited' | 'planned') => {
+    if (status === 'visited') {
+      setVisitedSites(prev => [...prev, siteId]);
+      setPlannedSites(prev => prev.filter(id => id !== siteId));
+    } else if (status === 'planned') {
+      setPlannedSites(prev => [...prev, siteId]);
+      setVisitedSites(prev => prev.filter(id => id !== siteId));
+    } else {
+      setVisitedSites(prev => prev.filter(id => id !== siteId));
+      setPlannedSites(prev => prev.filter(id => id !== siteId));
+    }
   };
 
   const renderScreen = () => {
@@ -118,9 +126,10 @@ export function MainApp({ user, onLogout }: MainAppProps) {
             site={selectedSite}
             isFavorite={favoriteSites.includes(selectedSite.id)}
             isVisited={visitedSites.includes(selectedSite.id)}
+            isPlanned={plannedSites.includes(selectedSite.id)}
             offlineMode={offlineMode}
             onToggleFavorite={() => toggleFavorite(selectedSite.id)}
-            onMarkVisited={() => markAsVisited(selectedSite.id)}
+            onVisitStatusChange={(status) => handleVisitStatusChange(selectedSite.id, status)}
             onBack={handleBackFromSite}
           />
         ) : null;

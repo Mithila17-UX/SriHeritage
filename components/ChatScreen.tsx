@@ -74,12 +74,12 @@ export function ChatScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
+          <View style={styles.headerText}>
+            <Text style={styles.headerTitle}>AI Heritage Guide</Text>
+            <Text style={styles.headerSubtitle}>Your personal tour assistant</Text>
+          </View>
           <View style={styles.botAvatar}>
             <Text style={styles.botIcon}>🤖</Text>
-          </View>
-          <View style={styles.headerText}>
-            <Text style={styles.headerTitle}>Heritage Guide</Text>
-            <Text style={styles.headerSubtitle}>AI Assistant • Online</Text>
           </View>
         </View>
       </View>
@@ -159,38 +159,39 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB', // gray-50
   },
   header: {
-    backgroundColor: '#EA580C', // orange-600 (gradient approximation)
-    paddingTop: 40, // Safe area top
+    backgroundColor: '#1E3A8A', // A deep navy blue
+    paddingTop: 32,
     paddingHorizontal: 16,
     paddingBottom: 16,
   },
   headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
   botAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
   },
   botIcon: {
-    fontSize: 20,
+    fontSize: 24,
   },
   headerText: {
     flex: 1,
   },
   headerTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 22,
+    fontWeight: '700',
     color: '#FFFFFF',
+    marginBottom: 4,
   },
   headerSubtitle: {
     fontSize: 14,
-    color: '#FED7AA', // orange-100
+    color: '#DBEAFE', // A light blue that complements the navy
   },
   messagesContainer: {
     flex: 1,
@@ -236,13 +237,14 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   userMessage: {
-    backgroundColor: '#EA580C', // orange-600
+    backgroundColor: '#1E3A8A', // A deep navy blue
   },
   botMessage: {
     backgroundColor: '#FFFFFF',
   },
   messageContent: {
-    padding: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
   },
   messageText: {
     fontSize: 14,
@@ -259,7 +261,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   userMessageTime: {
-    color: '#FED7AA', // orange-100
+    color: '#93C5FD', // A light blue for contrast against navy
   },
   botMessageTime: {
     color: '#6B7280', // gray-500
@@ -282,12 +284,12 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#EA580C', // orange-600
+    backgroundColor: '#1E3A8A', // A deep navy blue for consistency
     justifyContent: 'center',
     alignItems: 'center',
   },
   sendButtonDisabled: {
-    backgroundColor: '#FB923C', // orange-400
+    backgroundColor: '#60A5FA', // A lighter blue for the disabled state
   },
   sendIcon: {
     fontSize: 16,

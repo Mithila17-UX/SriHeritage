@@ -160,7 +160,7 @@ export function ProfileScreen({
           <CardHeader>
             <Text style={styles.cardTitle}>Your Journey</Text>
           </CardHeader>
-          <CardContent>
+          <CardContent style={{ paddingBottom: 16 }}>
             <View style={styles.statsGrid}>
               {stats.map((stat, index) => (
                 <View key={index} style={styles.statItem}>
@@ -180,7 +180,7 @@ export function ProfileScreen({
           <CardHeader>
             <Text style={styles.cardTitle}>Offline Mode</Text>
           </CardHeader>
-          <CardContent style={styles.offlineContent}>
+          <CardContent style={[styles.offlineContent, { paddingBottom: 16 }]}>
             <View style={styles.offlineRow}>
               <View style={styles.offlineInfo}>
                 <Text style={styles.offlineStatusIcon}>
@@ -215,7 +215,7 @@ export function ProfileScreen({
           <CardHeader>
             <Text style={styles.cardTitle}>Settings</Text>
           </CardHeader>
-          <CardContent>
+          <CardContent style={{ paddingBottom: 16 }}>
             <View style={styles.menuList}>
               {menuItems.map((item, index) => (
                 <TouchableOpacity
@@ -252,10 +252,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB', // gray-50
   },
   header: {
-    backgroundColor: '#EA580C', // orange-600 (gradient approximation)
-    paddingTop: 40, // Safe area top
-    paddingHorizontal: 24,
-    paddingBottom: 24,
+    backgroundColor: '#8B5CF6', // violet-500
+    paddingTop: 32,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
   headerContent: {
     flexDirection: 'row',
@@ -271,22 +271,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   avatarText: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: 24,
+    fontWeight: '600',
     color: '#FFFFFF',
   },
   userInfo: {
     flex: 1,
   },
   userName: {
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 22,
+    fontWeight: '700',
     color: '#FFFFFF',
     marginBottom: 4,
   },
   userEmail: {
-    fontSize: 16,
-    color: '#FED7AA', // orange-100
+    fontSize: 14,
+    color: '#EDE9FE', // violet-100
     marginBottom: 8,
   },
   userBadge: {
@@ -297,6 +297,7 @@ const styles = StyleSheet.create({
   userBadgeText: {
     color: '#FFFFFF',
     fontSize: 12,
+    fontWeight: '500',
   },
   offlineIndicator: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',

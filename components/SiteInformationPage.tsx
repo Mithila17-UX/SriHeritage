@@ -9,7 +9,7 @@ import { Progress } from './ui/progress';
 // import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 // import { Avatar, AvatarFallback } from './ui/avatar';
 // import { Textarea } from './ui/textarea';
-// import { ImageWithFallback } from './figma/ImageWithFallback';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 interface SiteInformationPageProps {
   site: {
@@ -29,7 +29,8 @@ interface SiteInformationPageProps {
   isVisited: boolean;
   offlineMode: boolean;
   onToggleFavorite: () => void;
-  onMarkVisited: () => void;
+  isPlanned: boolean;
+  onVisitStatusChange: (status: 'visited' | 'not-visited' | 'planned') => void;
   onBack: () => void;
 }
 
@@ -116,10 +117,11 @@ const reviews: Review[] = [
 export function SiteInformationPage({ 
   site, 
   isFavorite, 
-  isVisited, 
-  offlineMode, 
-  onToggleFavorite, 
-  onMarkVisited, 
+    isVisited,
+  isPlanned,
+  offlineMode,
+  onToggleFavorite,
+  onVisitStatusChange,
   onBack 
 }: SiteInformationPageProps) {
   const [activeTab, setActiveTab] = useState('about');
@@ -267,7 +269,7 @@ export function SiteInformationPage({
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         {/* Basic Info */}
         <Card style={styles.infoCard}>
-          <CardContent style={styles.infoCardContent}>
+          <CardContent style={[styles.infoCardContent, { paddingTop: 16, paddingBottom: 16 }]}>
             <Text style={styles.sectionTitle}>About</Text>
             <Text style={styles.description}>{site.description}</Text>
             
@@ -316,18 +318,22 @@ export function SiteInformationPage({
 
         {/* Visit Status */}
         <Card style={styles.statusCard}>
-          <CardContent style={styles.statusCardContent}>
+          <CardContent style={[styles.statusCardContent, { paddingTop: 16, paddingBottom: 16 }]}>
             <View style={styles.statusRow}>
               <Text style={styles.statusLabel}>Visit Status:</Text>
-              {isVisited ? (
-                <Badge style={styles.visitedBadge}>
-                  <Text style={styles.visitedBadgeText}>✓ Visited</Text>
-                </Badge>
-              ) : (
-                <TouchableOpacity style={styles.markVisitedButton} onPress={onMarkVisited}>
-                  <Text style={styles.markVisitedText}>Mark as Visited</Text>
-                </TouchableOpacity>
-              )}
+              <Select
+                value={isVisited ? 'visited' : isPlanned ? 'planned' : 'not-visited'}
+                onValueChange={(value) => onVisitStatusChange(value as any)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="visited">Visited</SelectItem>
+                  <SelectItem value="not-visited">Not Visited</SelectItem>
+                  <SelectItem value="planned">Plan to Visit</SelectItem>
+                </SelectContent>
+              </Select>
             </View>
           </CardContent>
         </Card>
@@ -335,7 +341,7 @@ export function SiteInformationPage({
         {/* Gallery Preview */}
         {site.gallery && site.gallery.length > 0 && (
           <Card style={styles.galleryCard}>
-            <CardContent style={styles.galleryCardContent}>
+            <CardContent style={[styles.galleryCardContent, { paddingTop: 16, paddingBottom: 16 }]}>
               <Text style={styles.sectionTitle}>Gallery</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.galleryScroll}>
                 {site.gallery.map((imageUrl, index) => (
@@ -353,7 +359,7 @@ export function SiteInformationPage({
 
         {/* Reviews Summary */}
         <Card style={styles.reviewsCard}>
-          <CardContent style={styles.reviewsCardContent}>
+          <CardContent style={[styles.reviewsCardContent, { paddingTop: 16, paddingBottom: 16 }]}>
             <Text style={styles.sectionTitle}>Reviews & Ratings</Text>
             <View style={styles.reviewsSummary}>
               <View style={styles.overallRating}>

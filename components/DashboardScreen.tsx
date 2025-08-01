@@ -238,7 +238,7 @@ export function DashboardScreen({ user, visitedSites, favoriteSites, onNavigateT
 
         {/* Recent Activity */}
         <Card style={styles.activityCard}>
-          <CardHeader>
+          <CardHeader style={styles.activityCardHeader}>
             <Text style={styles.cardTitle}>Recent Activity</Text>
           </CardHeader>
           <CardContent style={styles.activityContent}>
@@ -273,50 +273,53 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB', // gray-50
   },
   header: {
-    backgroundColor: '#EA580C', // orange-600 (gradient approximation)
-    paddingTop: 40, // Safe area top
-    paddingHorizontal: 24,
-    paddingBottom: 24,
+    backgroundColor: '#0369A1', // A deeper sky blue from the login theme
+    paddingTop: 32,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
   headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   userAvatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginRight: 12,
   },
   userInitial: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: 20,
+    fontWeight: '600',
     color: '#FFFFFF',
   },
   greetingContainer: {
     flex: 1,
   },
   greetingText: {
-    fontSize: 24,
-    fontWeight: '600',
+    fontSize: 20,
+    fontWeight: '700',
     color: '#FFFFFF',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   subGreetingText: {
-    fontSize: 16,
-    color: '#FED7AA', // orange-100
+    fontSize: 14,
+    color: '#E0F2FE', // A light sky blue for the subtitle
   },
   content: {
     padding: 16,
     gap: 24,
+    paddingBottom: 48,
   },
   // Progress Card
   progressCard: {
-    backgroundColor: '#EFF6FF', // blue-50
-    borderColor: '#BFDBFE', // blue-200
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E5E7EB',
+    borderWidth: 1,
+    padding: 8,
   },
   progressHeader: {
     paddingBottom: 12,
@@ -332,18 +335,19 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#111827', // gray-900
+    color: '#111827',
     marginBottom: 4,
   },
   cardSubtitle: {
     fontSize: 14,
-    color: '#4B5563', // gray-600
+    color: '#4B5563',
   },
   trophyIcon: {
     fontSize: 32,
   },
   progressContent: {
     gap: 12,
+    padding: 8,
   },
   progressDetails: {
     gap: 12,
@@ -355,12 +359,12 @@ const styles = StyleSheet.create({
   },
   progressLabel: {
     fontSize: 14,
-    color: '#4B5563', // gray-600
+    color: '#4B5563',
   },
   progressValue: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#111827', // gray-900
+    color: '#111827',
   },
   progressBar: {
     height: 12,
@@ -381,16 +385,16 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     fontSize: 12,
-    color: '#4B5563', // gray-600
+    color: '#4B5563',
   },
   blueText: {
-    color: '#2563EB', // blue-600
+    color: '#2563EB',
   },
   orangeText: {
-    color: '#EA580C', // orange-600
+    color: '#EA580C',
   },
   greenText: {
-    color: '#16A34A', // green-600
+    color: '#16A34A',
   },
   // Sections
   section: {
@@ -408,7 +412,7 @@ const styles = StyleSheet.create({
   },
   viewAllButton: {
     fontSize: 14,
-    color: '#EA580C', // orange-600
+    color: '#0369A1',
     fontWeight: '500',
   },
   // Actions Grid
@@ -427,16 +431,16 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   orangeButton: {
-    backgroundColor: '#EA580C', // orange-600
+    backgroundColor: '#2563EB', // Explore Map -> HomeScreen color
   },
   greenButton: {
-    backgroundColor: '#16A34A', // green-600
+    backgroundColor: '#0D9488', // All Places -> AllPlacesScreen color
   },
   blueButton: {
-    backgroundColor: '#2563EB', // blue-600
+    backgroundColor: '#1E3A8A', // Ask AI Guide -> ChatScreen color
   },
   purpleButton: {
-    backgroundColor: '#9333EA', // purple-600
+    backgroundColor: '#0EA5E9', // Join Forum -> ForumScreen color
   },
   actionIcon: {
     fontSize: 24,
@@ -448,18 +452,21 @@ const styles = StyleSheet.create({
   },
   // Sites
   sitesContainer: {
-    gap: 12,
+    gap: 16,
   },
   siteCard: {
     backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    marginBottom: 16,
   },
   siteCardContent: {
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
   siteRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 16,
   },
   siteImage: {
     width: 64,
@@ -468,7 +475,7 @@ const styles = StyleSheet.create({
   },
   siteInfo: {
     flex: 1,
-    gap: 4,
+    gap: 8,
   },
   siteName: {
     fontSize: 16,
@@ -481,23 +488,28 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   siteBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
   siteBadgeText: {
     fontSize: 12,
+    color: '#1F2937',
+    fontWeight: '500',
   },
   ratingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    gap: 4,
   },
   starIcon: {
-    fontSize: 12,
+    fontSize: 14,
+    color: '#FBBF24',
   },
   ratingText: {
-    fontSize: 12,
-    color: '#6B7280', // gray-500
+    fontSize: 14,
+    color: '#4B5563',
   },
   locationRow: {
     flexDirection: 'row',
@@ -505,32 +517,37 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   locationIcon: {
-    fontSize: 12,
+    fontSize: 14,
+    color: '#6B7280',
   },
   locationText: {
-    fontSize: 12,
-    color: '#6B7280', // gray-500
+    fontSize: 14,
+    color: '#6B7280',
   },
   exploreButton: {
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#FED7AA', // orange-200
-    justifyContent: 'center',
-    alignItems: 'center',
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#E0F2FE',
   },
   exploreButtonText: {
     fontSize: 12,
-    color: '#EA580C', // orange-600
-    fontWeight: '500',
+    color: '#0284C7',
+    fontWeight: '600',
   },
   // Activity
   activityCard: {
     backgroundColor: '#FFFFFF',
+    padding: 16,
+    borderColor: '#E5E7EB',
+    borderWidth: 1,
+  },
+  activityCardHeader: {
+    paddingBottom: 12,
   },
   activityContent: {
-    gap: 12,
+    gap: 16,
+    paddingTop: 8,
   },
   activityItem: {
     flexDirection: 'row',

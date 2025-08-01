@@ -89,13 +89,12 @@ export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
-          <View style={styles.headerText}>
-            <Text style={styles.headerTitle}>Heritage Map</Text>
-            <Text style={styles.headerSubtitle}>Explore Sri Lanka's cultural sites</Text>
+          <View style={styles.headerIconContainer}>
+            <Text style={styles.headerIcon}>🗺️</Text>
           </View>
-          <View style={styles.locationContainer}>
-            <Text style={styles.locationIcon}>🧭</Text>
-            <Text style={styles.locationText}>Kandy</Text>
+          <View style={styles.headerText}>
+            <Text style={styles.headerTitle}>Heritage Sites Map</Text>
+            <Text style={styles.headerSubtitle}>Discover and navigate to cultural sites</Text>
           </View>
         </View>
       </View>
@@ -177,36 +176,36 @@ export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites
                           </View>
                         </View>
                         
-                        <View style={styles.siteMetadata}>
-                          <Badge variant="secondary" style={styles.categoryBadge}>
-                            <Text style={styles.categoryText}>{site.category}</Text>
-                          </Badge>
-                          <View style={styles.locationContainer}>
-                            <Text style={styles.locationIcon}>📍</Text>
-                            <Text style={styles.locationText}>{site.location}</Text>
-                          </View>
-                          {isVisited && (
-                            <Badge style={styles.visitedLabel}>
-                              <Text style={styles.visitedLabelText}>Visited</Text>
+                          <View style={styles.siteMetadata}>
+                            <Badge variant="secondary" style={styles.categoryBadge}>
+                              <Text style={styles.categoryText}>{site.category}</Text>
                             </Badge>
-                          )}
-                        </View>
-                        
-                        <View style={styles.siteFooter}>
-                          <View style={styles.distanceContainer}>
-                            <Text style={styles.clockIcon}>🕐</Text>
-                            <Text style={styles.distanceText}>{site.distance} away</Text>
+                            <Badge style={styles.locationBadge}>
+                              <Text style={styles.locationIcon}>📍</Text>
+                              <Text style={styles.locationText}>{site.location}</Text>
+                            </Badge>
+                            {isVisited && (
+                              <Badge style={styles.visitedLabel}>
+                                <Text style={styles.visitedLabelText}>Visited</Text>
+                              </Badge>
+                            )}
                           </View>
-                          <TouchableOpacity 
-                            style={styles.detailsButton}
-                            onPress={(e) => {
-                              e.stopPropagation();
-                              onNavigateToSite(site);
-                            }}
-                          >
-                            <Text style={styles.detailsButtonText}>View Details</Text>
-                          </TouchableOpacity>
-                        </View>
+                          
+                          <View style={styles.siteFooter}>
+                            <View style={styles.distanceContainer}>
+                              <Text style={styles.clockIcon}>🕐</Text>
+                              <Text style={styles.distanceText}>{site.distance} away</Text>
+                            </View>
+                            <TouchableOpacity 
+                              style={styles.detailsButton}
+                              onPress={(e) => {
+                                e.stopPropagation();
+                                onNavigateToSite(site);
+                              }}
+                            >
+                              <Text style={styles.detailsButtonText}>View Details</Text>
+                            </TouchableOpacity>
+                          </View>
                       </View>
                     </View>
                     
@@ -240,43 +239,40 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB', // gray-50
   },
   header: {
-    backgroundColor: '#EA580C', // orange-600 (gradient approximation)
-    paddingTop: 40, // Safe area top
+    backgroundColor: '#2563EB', // blue-600
+    paddingTop: 32,
     paddingHorizontal: 16,
     paddingBottom: 16,
   },
   headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 12,
+  },
+  headerIconContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerIcon: {
+    fontSize: 24,
+    color: '#FFFFFF',
   },
   headerText: {
     flex: 1,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 22,
+    fontWeight: '700',
     color: '#FFFFFF',
     marginBottom: 4,
   },
   headerSubtitle: {
     fontSize: 14,
-    color: '#FED7AA', // orange-100
-  },
-  locationContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    padding: 8,
-    borderRadius: 6,
-    gap: 8,
-  },
-  locationIcon: {
-    fontSize: 20,
-  },
-  locationText: {
-    fontSize: 14,
-    color: '#FFFFFF',
+    color: '#D1FAE5', // green-100
   },
   // Map Area
   mapContainer: {
@@ -378,11 +374,13 @@ const styles = StyleSheet.create({
     borderColor: '#FB923C', // orange-400
   },
   siteCardContent: {
-    padding: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
   },
   siteRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 16,
+    alignItems: 'center',
   },
   siteImageContainer: {
     position: 'relative',
@@ -431,6 +429,7 @@ const styles = StyleSheet.create({
   },
   siteInfo: {
     flex: 1,
+    justifyContent: 'space-between',
     gap: 8,
   },
   siteHeader: {
@@ -470,8 +469,21 @@ const styles = StyleSheet.create({
   categoryText: {
     fontSize: 12,
   },
+  locationBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E0E7FF', // A light indigo color
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
   locationIcon: {
     fontSize: 12,
+    marginRight: 4,
+  },
+  locationText: {
+    fontSize: 12,
+    color: '#4338CA', // A deep indigo color
   },
   visitedLabel: {
     backgroundColor: '#DCFCE7', // green-100

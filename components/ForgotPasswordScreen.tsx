@@ -135,12 +135,10 @@ export function ForgotPasswordScreen({ onBackToLogin }: ForgotPasswordScreenProp
           </View>
           
           <View style={styles.signInContainer}>
-            <Text style={styles.signInText}>
-              Remember your password?{' '}
-              <TouchableOpacity onPress={onBackToLogin}>
-                <Text style={styles.signInLink}>Sign In</Text>
-              </TouchableOpacity>
-            </Text>
+            <Text style={styles.signInText}>Remember your password? </Text>
+            <TouchableOpacity onPress={onBackToLogin}>
+              <Text style={styles.signInLink}>Sign In</Text>
+            </TouchableOpacity>
           </View>
         </CardContent>
       </Card>
@@ -228,6 +226,7 @@ const styles = StyleSheet.create({
   },
   content: {
     gap: 24,
+    paddingBottom: 24,
   },
   form: {
     gap: 16,
@@ -250,12 +249,13 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   signInContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   signInText: {
     fontSize: 16,
     color: '#4B5563', // gray-600
-    textAlign: 'center',
   },
   signInLink: {
     color: '#EA580C', // orange-600
