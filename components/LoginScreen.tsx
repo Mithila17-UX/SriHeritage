@@ -14,6 +14,7 @@ interface LoginScreenProps {
 export function LoginScreen({ onLogin, onNavigateToSignup, onNavigateToForgotPassword }: LoginScreenProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = () => {
     if (email && password) {
@@ -59,13 +60,24 @@ export function LoginScreen({ onLogin, onNavigateToSignup, onNavigateToForgotPas
             
             <View style={styles.inputGroup}>
               <Label style={styles.label}>Password</Label>
-              <Input
-                placeholder="Enter your password"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={true}
-                style={styles.input}
-              />
+              <View style={styles.passwordContainer}>
+                <Input
+                  placeholder="Enter your password"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  style={styles.passwordInput}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPassword((prev) => !prev)}
+                  style={styles.passwordToggle}
+                  accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  <Text style={styles.passwordToggleText}>
+                    {showPassword ? '🙈' : '👁️'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
             
             <View style={styles.forgotPasswordContainer}>
@@ -203,6 +215,24 @@ const styles = StyleSheet.create({
   },
   input: {
     borderColor: '#93C5FD', // A calm blue for the input border
+  },
+  passwordContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  passwordInput: {
+    borderColor: '#93C5FD', // A calm blue for the input border
+    flex: 1,
+    paddingRight: 40, // Add padding to prevent text overlap with the button
+  },
+  passwordToggle: {
+    position: 'absolute',
+    right: 12,
+    padding: 4,
+  },
+  passwordToggleText: {
+    fontSize: 18,
   },
   forgotPasswordContainer: {
     alignItems: 'flex-end',
