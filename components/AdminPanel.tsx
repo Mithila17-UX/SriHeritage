@@ -1233,66 +1233,113 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E40AF',
   },
   siteCard: {
-    marginBottom: 12,
+    marginBottom: 16, // increased spacing between cards
+    marginTop: 8, // add top margin for first card
     backgroundColor: '#FFFFFF',
+    borderRadius: 16, // rounded corners for modern look
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    paddingTop: 18, // add top padding
+    paddingBottom: 18, // add bottom padding
+    paddingHorizontal: 16, // add horizontal padding
   },
   siteCardContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 16, // add spacing between info and actions
   },
   siteInfo: {
     flex: 1,
+    paddingRight: 12, // space between info and actions
   },
   siteName: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 18, // larger for emphasis
+    fontWeight: '700',
     color: '#1F2937',
-    marginBottom: 4,
+    marginBottom: 2,
+    letterSpacing: 0.2,
   },
   siteLocation: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginBottom: 8,
+    fontSize: 15,
+    color: '#6366F1', // more eye-catching color
+    marginBottom: 6,
+    fontWeight: '500',
   },
   siteMetadata: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 2,
   },
   categoryBadge: {
-    backgroundColor: '#E0E7FF',
-    color: '#4338CA',
-    marginRight: 8,
+    backgroundColor: '#C7D2FE',
+    color: '#3730A3',
+    marginRight: 10,
+    fontWeight: '600',
+    fontSize: 13,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
   },
   rating: {
-    fontSize: 14,
-    color: '#6B7280',
+    fontSize: 15,
+    color: '#F59E42', // gold for star
+    fontWeight: '600',
   },
   siteActions: {
-    flexDirection: 'row',
+    flexDirection: 'column', // stack vertically for clarity
+    alignItems: 'flex-end',
+    gap: 8,
   },
   actionButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 6,
-    marginLeft: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#EEF2FF',
+    borderRadius: 8,
+    marginLeft: 0,
+    marginBottom: 6,
+    minWidth: 90,
+    alignItems: 'center',
+    shadowColor: '#6366F1',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
+    elevation: 1,
   },
   actionButtonText: {
-    fontSize: 14,
-    color: '#1F2937',
+    fontSize: 15,
+    color: '#3730A3',
+    fontWeight: '600',
+    letterSpacing: 0.1,
   },
   deleteButton: {
     backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
   },
   deleteButtonText: {
     color: '#DC2626',
+    fontWeight: '700',
   },
   formContainer: {
     padding: 16,
   },
   formCard: {
     backgroundColor: '#FFFFFF',
+    borderRadius: 16, // rounded corners
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    paddingTop: 18,
+    paddingBottom: 18,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    marginTop: 8,
   },
   formTitle: {
     fontSize: 20,
@@ -1367,7 +1414,16 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 150,
     backgroundColor: '#FFFFFF',
-    margin: 6,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    paddingTop: 18,
+    paddingBottom: 18,
+    paddingHorizontal: 16,
+    margin: 8,
   },
   statValue: {
     fontSize: 32,
@@ -1383,6 +1439,17 @@ const styles = StyleSheet.create({
   },
   recentActivityCard: {
     backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    paddingTop: 18,
+    paddingBottom: 18,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    marginTop: 8,
   },
   cardTitle: {
     fontSize: 18,
@@ -1399,7 +1466,17 @@ const styles = StyleSheet.create({
   },
   settingsCard: {
     backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    paddingTop: 18,
+    paddingBottom: 18,
+    paddingHorizontal: 16,
     marginBottom: 16,
+    marginTop: 8,
   },
   settingItem: {
     flexDirection: 'row',
