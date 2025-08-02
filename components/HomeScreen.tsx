@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 // Note: Replace lucide-react icons with React Native compatible icons
 // import { MapPin, Navigation, Star, Clock, Camera, Heart, Eye } from 'lucide-react';
 // import { ImageWithFallback } from './figma/ImageWithFallback';
@@ -14,7 +15,7 @@ interface HomeScreenProps {
   visitedSites: number[];
 }
 
-const heritageSites = [
+const defaultHeritageSites = [
   {
     id: 1,
     name: 'Temple of the Sacred Tooth Relic',
@@ -83,6 +84,28 @@ const heritageSites = [
 
 export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites }: HomeScreenProps) {
   const [selectedSite, setSelectedSite] = useState<number | null>(null);
+  const [heritageSites, setHeritageSites] = useState(defaultHeritageSites);
+
+  // Load sites from AsyncStorage
+  useEffect(() => {
+    const loadSites = async () => {
+      try {
+        const storedSites = await AsyncStorage.getItem('sri-heritage-sites');
+        if (storedSites) {
+          setHeritageSites(JSON.parse(storedSites));
+        }
+      } catch (error) {
+        console.error('Error loading sites:', error);
+      }
+    };
+
+    loadSites();
+    
+    // Set up interval to check for updates
+    const interval = setInterval(loadSites, 2000); // Check every 2 seconds
+    
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <View style={styles.container}>

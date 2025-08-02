@@ -6,13 +6,15 @@ import { SignupScreen } from './components/SignupScreen';
 import { ForgotPasswordScreen } from './components/ForgotPasswordScreen';
 import { OnboardingFlow } from './components/OnboardingFlow';
 import { MainApp } from './components/MainApp';
+import { AdminPanel } from './components/AdminPanel';
 
-type ScreenType = 'onboarding' | 'login' | 'signup' | 'forgot-password' | 'main';
+type ScreenType = 'onboarding' | 'login' | 'signup' | 'forgot-password' | 'main' | 'admin';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('login');
   const [user, setUser] = useState<{ name: string; email: string } | null>(null);
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     const checkOnboarding = async () => {
@@ -32,8 +34,16 @@ export default function App() {
   }, []);
 
   const handleLogin = (email: string, password: string) => {
-    setUser({ name: email.split('@')[0], email });
-    setCurrentScreen('main');
+    // Check if this is an admin login
+    if (email === 'Admin@SriHeritage' && password === 'SriHeritageAd7788') {
+      setUser({ name: 'Administrator', email });
+      setIsAdmin(true);
+      setCurrentScreen('admin');
+    } else {
+      setUser({ name: email.split('@')[0], email });
+      setIsAdmin(false);
+      setCurrentScreen('main');
+    }
   };
 
   const handleSignup = (name: string, email: string, password: string) => {
@@ -48,6 +58,7 @@ export default function App() {
 
   const handleLogout = () => {
     setUser(null);
+    setIsAdmin(false);
     setCurrentScreen('login');
   };
 
@@ -104,6 +115,8 @@ export default function App() {
         );
       case 'main':
         return <MainApp user={user} onLogout={handleLogout} />;
+      case 'admin':
+        return <AdminPanel onLogout={handleLogout} />;
       default:
         return null;
     }

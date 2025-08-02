@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, FlatList } from 'react-native';
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 // Note: Replace lucide-react icons with React Native compatible icons
 // import { MapPin, Navigation, Star, Search, Filter, Heart, Eye, SortAsc } from 'lucide-react';
 // import { ImageWithFallback } from './figma/ImageWithFallback';
@@ -16,7 +17,7 @@ interface AllPlacesScreenProps {
   visitedSites: number[];
 }
 
-const allPlaces = [
+const defaultPlaces = [
   {
     id: 1,
     name: 'Temple of the Sacred Tooth Relic',
@@ -166,6 +167,28 @@ export function AllPlacesScreen({ user, onNavigateToSite, favoriteSites, visited
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDistrict, setSelectedDistrict] = useState('All Districts');
   const [sortBy, setSortBy] = useState('proximity');
+  const [allPlaces, setAllPlaces] = useState(defaultPlaces);
+
+  // Load sites from AsyncStorage
+  useEffect(() => {
+    const loadSites = async () => {
+      try {
+        const storedSites = await AsyncStorage.getItem('sri-heritage-sites');
+        if (storedSites) {
+          setAllPlaces(JSON.parse(storedSites));
+        }
+      } catch (error) {
+        console.error('Error loading sites:', error);
+      }
+    };
+
+    loadSites();
+    
+    // Set up interval to check for updates
+    const interval = setInterval(loadSites, 2000); // Check every 2 seconds
+    
+    return () => clearInterval(interval);
+  }, []);
 
   const filteredAndSortedPlaces = useMemo(() => {
     let filtered = allPlaces;
