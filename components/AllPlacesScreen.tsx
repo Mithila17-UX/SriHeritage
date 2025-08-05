@@ -324,14 +324,19 @@ export function AllPlacesScreen({ user, onNavigateToSite, favoriteSites, visited
                 <TouchableOpacity onPress={() => onNavigateToSite(place)}>
                   <Card style={styles.placeCard}>
                     <CardContent style={styles.placeCardContent}>
-                      <View style={styles.placeRow}>
-                        {/* Thumbnail */}
-                        <View style={styles.thumbnailContainer}>
-                          <Image
-                            source={{ uri: place.image }}
-                            style={styles.thumbnail}
-                            resizeMode="cover"
-                          />
+                      <View style={styles.cardTopSection}>
+                        <View style={styles.siteImageContainer}>
+                          {place.image ? (
+                            <Image
+                              source={{ uri: place.image }}
+                              style={styles.siteImage}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View style={styles.noImagePlaceholder}>
+                              <Text style={styles.noImageText}>📷</Text>
+                            </View>
+                          )}
                           {isVisited && (
                             <View style={[styles.badge, styles.visitedBadge]}>
                               <Text style={styles.badgeIcon}>👁️</Text>
@@ -343,49 +348,29 @@ export function AllPlacesScreen({ user, onNavigateToSite, favoriteSites, visited
                             </View>
                           )}
                         </View>
-
-                        {/* Content */}
-                        <View style={styles.placeContent}>
-                          <View style={styles.placeHeader}>
-                            <View style={styles.placeInfo}>
-                              <Text style={styles.placeName} numberOfLines={1}>{place.name}</Text>
-                              <View style={styles.locationRow}>
-                                <Text style={styles.locationIcon}>📍</Text>
-                                <Text style={styles.locationText}>{place.location}</Text>
-                                <Text style={styles.locationSeparator}>•</Text>
-                                <Text style={styles.locationText}>{place.district}</Text>
-                              </View>
-                            </View>
-                            <View style={styles.ratingContainer}>
-                              <Text style={styles.starIcon}>⭐</Text>
-                              <Text style={styles.ratingText}>{place.rating}</Text>
-                            </View>
-                          </View>
-
-                          <Text style={styles.placeDescription} numberOfLines={2}>{place.description}</Text>
-                          
-                          <View style={styles.placeFooter}>
-                            <View style={styles.placeMetadata}>
-                              <Badge variant="secondary" style={styles.categoryBadge}>
-                                <Text style={styles.categoryText}>{place.category}</Text>
-                              </Badge>
-                              {isVisited && (
-                                <Badge style={styles.visitedLabel}>
-                                  <Text style={styles.visitedLabelText}>Visited</Text>
-                                </Badge>
-                              )}
-                            </View>
-                            <TouchableOpacity
-                              onPress={(e) => {
-                                e.stopPropagation();
-                                onNavigateToSite(place);
-                              }}
-                              style={styles.detailsButton}
-                            >
-                              <Text style={styles.detailsButtonText}>View Details</Text>
-                            </TouchableOpacity>
+                        
+                        <View style={styles.siteInfo}>
+                          <Text style={styles.siteName} numberOfLines={1}>{place.name}</Text>
+                          <Text style={styles.siteDetailText}>{place.location}</Text>
+                          <Text style={styles.siteDetailText}>{place.district}</Text>
+                          <Text style={styles.siteDescription} numberOfLines={2}>{place.description}</Text>
+                          <View style={styles.siteMetadata}>
+                            <Badge style={styles.categoryBadge}>{place.category}</Badge>
+                            <Text style={styles.rating}>⭐ {place.rating}</Text>
                           </View>
                         </View>
+                      </View>
+                      
+                      <View style={styles.siteActions}>
+                        <TouchableOpacity
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            onNavigateToSite(place);
+                          }}
+                          style={styles.detailsButton}
+                        >
+                          <Text style={styles.detailsButtonText}>View Details</Text>
+                        </TouchableOpacity>
                       </View>
                     </CardContent>
                   </Card>
@@ -525,154 +510,123 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   placeCard: {
+    marginBottom: 16,
     backgroundColor: '#FFFFFF',
-    marginBottom: 0,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
+    paddingTop: 16,
+    paddingBottom: 16,
   },
   placeCardContent: {
-    paddingVertical: 16,
     paddingHorizontal: 16,
-  },
-  placeRow: {
-    flexDirection: 'row',
     gap: 16,
-    alignItems: 'center',
   },
-  thumbnailContainer: {
+  cardTopSection: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 16,
+  },
+  siteImageContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#F3F4F6',
     position: 'relative',
-    width: 96,
-    height: 96,
-    flexShrink: 0,
   },
-  thumbnail: {
-    width: 96,
-    height: 96,
-    borderRadius: 8,
+  siteImage: {
+    width: '100%',
+    height: '100%',
+  },
+  noImagePlaceholder: {
+    width: 100,
+    height: 100,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+  },
+  noImageText: {
+    fontSize: 30,
+    color: '#9CA3AF',
   },
   badge: {
     position: 'absolute',
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
   visitedBadge: {
     top: 4,
     right: 4,
-    backgroundColor: '#10B981', // green-500
+    backgroundColor: '#10B981',
   },
   favoriteBadge: {
     bottom: 4,
     right: 4,
-    backgroundColor: '#EF4444', // red-500
+    backgroundColor: '#EF4444',
   },
   badgeIcon: {
-    fontSize: 10,
+    fontSize: 12,
   },
-  placeContent: {
+  siteInfo: {
     flex: 1,
-    justifyContent: 'space-between',
-    gap: 8,
   },
-  placeHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-  },
-  placeInfo: {
-    flex: 1,
-    marginRight: 8,
-  },
-  placeName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827', // gray-900
+  siteName: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#111827',
     marginBottom: 4,
   },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  locationIcon: {
-    fontSize: 12,
-  },
-  locationText: {
+  siteDetailText: {
     fontSize: 14,
-    color: '#4B5563', // gray-600
+    color: '#4B5563',
+    marginBottom: 2,
   },
-  locationSeparator: {
+  siteDescription: {
     fontSize: 14,
-    color: '#9CA3AF', // gray-400
-  },
-  ratingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  starIcon: {
-    fontSize: 14,
-  },
-  ratingText: {
-    fontSize: 14,
-    color: '#4B5563', // gray-600
-  },
-  placeDescription: {
-    fontSize: 14,
-    color: '#374151', // gray-700
-    lineHeight: 20,
+    color: '#6B7280',
     marginBottom: 8,
   },
-  placeFooter: {
+  siteMetadata: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  placeMetadata: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flexShrink: 1,
-    flexWrap: 'wrap',
+    marginTop: 8,
+    gap: 10,
   },
   categoryBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: '#F3F4F6', // gray-100
+    backgroundColor: '#E0E7FF',
+    color: '#3730A3',
+    fontWeight: '600',
   },
-  categoryText: {
-    fontSize: 12,
-    color: '#374151', // gray-700
+  rating: {
+    fontSize: 15,
+    color: '#F59E42',
+    fontWeight: 'bold',
   },
-  distanceText: {
-    fontSize: 14,
-    color: '#6B7280', // gray-500
-    alignItems: 'center',
-  },
-  distanceIcon: {
-    fontSize: 12,
-  },
-  visitedLabel: {
-    backgroundColor: '#DCFCE7', // green-100
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  visitedLabelText: {
-    fontSize: 12,
-    color: '#166534', // green-800
+  siteActions: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    paddingTop: 16,
   },
   detailsButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: '#FED7AA', // orange-200
+    flex: 1,
+    paddingVertical: 10,
     borderRadius: 8,
-    backgroundColor: '#FFF7ED', // orange-50
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
   },
   detailsButtonText: {
     fontSize: 14,
-    color: '#C2410C', // orange-700
-    fontWeight: '500',
+    fontWeight: '600',
+    color: '#92400E',
   },
 });

@@ -1,19 +1,16 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Share, Alert } from 'react-native';
 import { Card, CardContent, CardHeader } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-// Note: Replace lucide-react icons with React Native compatible icons
-// Note: Avatar component would need React Native conversion
-// import { Avatar, AvatarFallback } from './ui/avatar';
-// import { Heart, MessageCircle, Share2, Plus, Filter } from 'lucide-react';
-// import { ImageWithFallback } from './figma/ImageWithFallback';
+import { CreatePostScreen } from './CreatePostScreen';
+import { CommentSection } from './CommentSection';
 
 interface ForumScreenProps {
   user: { name: string; email: string } | null;
 }
 
-const forumPosts = [
+const forumPostsData = [
   {
     id: 1,
     author: 'Samantha Perera',
@@ -24,7 +21,24 @@ const forumPosts = [
     image: 'https://images.unsplash.com/photo-1571715268652-3c2247e38d3e?w=400&h=200&fit=crop',
     likes: 24,
     comments: 8,
-    tags: ['Sigiriya', 'Ancient Sites', 'Photography']
+    tags: ['Sigiriya', 'Ancient Sites', 'Photography'],
+    liked: false,
+    postComments: [
+      {
+        id: '1',
+        author: 'John Doe',
+        avatar: 'JD',
+        text: 'Amazing photos! I visited last year and had a similar experience.',
+        time: '1h ago',
+      },
+      {
+        id: '2',
+        author: 'Jane Smith',
+        avatar: 'JS',
+        text: 'Thanks for the tip about going early morning!',
+        time: '30m ago',
+      }
+    ]
   },
   {
     id: 2,
@@ -35,7 +49,17 @@ const forumPosts = [
     content: 'Attended a traditional mask making workshop in Ambalangoda today. Learning about the cultural significance of each mask and the intricate craftsmanship involved was fascinating.',
     likes: 18,
     comments: 12,
-    tags: ['Traditional Arts', 'Masks', 'Culture']
+    tags: ['Traditional Arts', 'Masks', 'Culture'],
+    liked: false,
+    postComments: [
+      {
+        id: '3',
+        author: 'Mike Wilson',
+        avatar: 'MW',
+        text: 'This looks incredible! Where exactly was this workshop held?',
+        time: '2h ago',
+      }
+    ]
   },
   {
     id: 3,
@@ -47,12 +71,120 @@ const forumPosts = [
     image: 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=400&h=200&fit=crop',
     likes: 42,
     comments: 15,
-    tags: ['Festivals', 'Kandy', 'Culture']
+    tags: ['Festivals', 'Kandy', 'Culture'],
+    liked: true,
+    postComments: [
+      {
+        id: '4',
+        author: 'Sarah Brown',
+        avatar: 'SB',
+        text: 'I was there too! The cultural performances were breathtaking.',
+        time: '12h ago',
+      },
+      {
+        id: '5',
+        author: 'David Lee',
+        avatar: 'DL',
+        text: 'Planning to attend next year. Any tips for getting good spots?',
+        time: '8h ago',
+      }
+    ]
   }
 ];
 
 export function ForumScreen({ user }: ForumScreenProps) {
   const [filter, setFilter] = useState<'all' | 'my-posts' | 'popular'>('all');
+  const [isCreatingPost, setIsCreatingPost] = useState(false);
+  const [forumPosts, setForumPosts] = useState(forumPostsData);
+  const [selectedPostId, setSelectedPostId] = useState<number | null>(null);
+
+  const handlePostCreated = (newPost: any) => {
+    setForumPosts([{ ...newPost, liked: false, postComments: [] }, ...forumPosts]);
+    setIsCreatingPost(false);
+  };
+
+  const handleLike = (postId: number) => {
+    setForumPosts(
+      forumPosts.map((post) =>
+        post.id === postId
+          ? { ...post, liked: !post.liked, likes: post.liked ? post.likes - 1 : post.likes + 1 }
+          : post
+      )
+    );
+  };
+
+  const handleShare = async (post: any) => {
+    try {
+      await Share.share({
+        message: `Check out this post from the Sri Heritage App forum: "${post.title}" by ${post.author}`,
+        url: 'https://sriheritage.app',
+        title: post.title,
+      });
+    } catch (error) {
+      Alert.alert('Error', 'There was an issue sharing this post.');
+    }
+  };
+  
+  const handleAddComment = (postId: number, text: string) => {
+    const newComment = {
+      id: Date.now().toString(),
+      author: user?.name || 'Anonymous',
+      avatar: user?.name?.charAt(0).toUpperCase() || 'A',
+      text,
+      time: 'Just now',
+    };
+    
+    setForumPosts(
+      forumPosts.map((post) =>
+        post.id === postId
+          ? { 
+              ...post, 
+              postComments: [...(post.postComments || []), newComment],
+              comments: post.comments + 1
+            }
+          : post
+      )
+    );
+  };
+
+  const handleEditComment = (postId: number, commentId: string, text: string) => {
+    setForumPosts(
+      forumPosts.map((post) =>
+        post.id === postId
+          ? {
+              ...post,
+              postComments: (post.postComments || []).map((comment) =>
+                comment.id === commentId ? { ...comment, text } : comment
+              )
+            }
+          : post
+      )
+    );
+  };
+
+  const handleDeleteComment = (postId: number, commentId: string) => {
+    setForumPosts(
+      forumPosts.map((post) =>
+        post.id === postId
+          ? {
+              ...post,
+              postComments: (post.postComments || []).filter((comment) => comment.id !== commentId),
+              comments: Math.max(0, post.comments - 1)
+            }
+          : post
+      )
+    );
+  };
+
+  if (isCreatingPost) {
+    return (
+      <CreatePostScreen
+        user={user}
+        onPostCreated={handlePostCreated}
+        onCancel={() => setIsCreatingPost(false)}
+      />
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -63,7 +195,7 @@ export function ForumScreen({ user }: ForumScreenProps) {
             <Text style={styles.headerTitle}>Community Forum</Text>
             <Text style={styles.headerSubtitle}>Share your heritage experiences</Text>
           </View>
-          <TouchableOpacity style={styles.newPostButton}>
+          <TouchableOpacity style={styles.newPostButton} onPress={() => setIsCreatingPost(true)}>
             <Text style={styles.newPostIcon}>➕</Text>
             <Text style={styles.newPostText}>New Post</Text>
           </TouchableOpacity>
@@ -140,20 +272,29 @@ export function ForumScreen({ user }: ForumScreenProps) {
               
               <View style={styles.actionsContainer}>
                 <View style={styles.leftActions}>
-                  <TouchableOpacity style={styles.actionButton}>
-                    <Text style={styles.heartIcon}>❤️</Text>
+                  <TouchableOpacity style={styles.actionButton} onPress={() => handleLike(post.id)}>
+                    <Text style={[styles.heartIcon, post.liked && styles.likedHeartIcon]}>❤️</Text>
                     <Text style={styles.actionText}>{post.likes}</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.actionButton}>
+                  <TouchableOpacity style={styles.actionButton} onPress={() => setSelectedPostId(selectedPostId === post.id ? null : post.id)}>
                     <Text style={styles.commentIcon}>💬</Text>
                     <Text style={styles.actionText}>{post.comments}</Text>
                   </TouchableOpacity>
                 </View>
-                <TouchableOpacity style={styles.actionButton}>
+                <TouchableOpacity style={styles.actionButton} onPress={() => handleShare(post)}>
                   <Text style={styles.shareIcon}>📤</Text>
                   <Text style={styles.actionText}>Share</Text>
                 </TouchableOpacity>
               </View>
+
+              {selectedPostId === post.id && (
+                <CommentSection
+                  comments={post.postComments || []}
+                  onAddComment={(text) => handleAddComment(post.id, text)}
+                  onEditComment={(commentId, text) => handleEditComment(post.id, commentId, text)}
+                  onDeleteComment={(commentId) => handleDeleteComment(post.id, commentId)}
+                />
+              )}
             </CardContent>
           </Card>
         ))}
@@ -165,10 +306,10 @@ export function ForumScreen({ user }: ForumScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB', // gray-50
+    backgroundColor: '#F9FAFB',
   },
   header: {
-    backgroundColor: '#0EA5E9', // A vibrant sky blue from the login theme
+    backgroundColor: '#0EA5E9',
     paddingTop: 32,
     paddingHorizontal: 16,
     paddingBottom: 16,
@@ -189,7 +330,7 @@ const styles = StyleSheet.create({
   },
   headerSubtitle: {
     fontSize: 14,
-    color: '#E0F2FE', // A light sky blue for the subtitle
+    color: '#E0F2FE',
   },
   newPostButton: {
     flexDirection: 'row',
@@ -210,14 +351,13 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '500',
   },
-  // Filter Tabs
   filterContainer: {
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB', // gray-200
+    borderBottomColor: '#E5E7EB',
     paddingHorizontal: 16,
-    height: 50, // Set a fixed height for vertical centering
-    justifyContent: 'center', // Center content vertically
+    height: 50,
+    justifyContent: 'center',
   },
   filterTabs: {
     flexDirection: 'row',
@@ -231,11 +371,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   activeFilterTab: {
-    backgroundColor: '#EA580C', // orange-600
+    backgroundColor: '#EA580C',
   },
   filterTabText: {
     fontSize: 14,
-    color: '#374151', // gray-700
+    color: '#374151',
     fontWeight: '500',
   },
   activeFilterTabText: {
@@ -248,7 +388,6 @@ const styles = StyleSheet.create({
   filterIcon: {
     fontSize: 16,
   },
-  // Posts
   postsContainer: {
     flex: 1,
   },
@@ -258,6 +397,7 @@ const styles = StyleSheet.create({
   },
   postCard: {
     backgroundColor: '#FFFFFF',
+    paddingBottom: 16,
   },
   postHeader: {
     paddingBottom: 12,
@@ -271,14 +411,14 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#FED7AA', // orange-100
+    backgroundColor: '#FED7AA',
     justifyContent: 'center',
     alignItems: 'center',
   },
   avatarText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#C2410C', // orange-700
+    color: '#C2410C',
   },
   authorInfo: {
     flex: 1,
@@ -286,12 +426,12 @@ const styles = StyleSheet.create({
   authorName: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#111827', // gray-900
+    color: '#111827',
     marginBottom: 2,
   },
   postTime: {
     fontSize: 14,
-    color: '#6B7280', // gray-500
+    color: '#6B7280',
   },
   postContent: {
     paddingTop: 0,
@@ -299,12 +439,12 @@ const styles = StyleSheet.create({
   postTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#111827', // gray-900
+    color: '#111827',
     marginBottom: 8,
   },
   postText: {
     fontSize: 14,
-    color: '#374151', // gray-700
+    color: '#374151',
     lineHeight: 20,
     marginBottom: 12,
   },
@@ -335,7 +475,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#F3F4F6', // gray-100
+    borderTopColor: '#F3F4F6',
   },
   leftActions: {
     flexDirection: 'row',
@@ -351,6 +491,9 @@ const styles = StyleSheet.create({
   heartIcon: {
     fontSize: 16,
   },
+  likedHeartIcon: {
+    color: '#EF4444',
+  },
   commentIcon: {
     fontSize: 16,
   },
@@ -359,6 +502,6 @@ const styles = StyleSheet.create({
   },
   actionText: {
     fontSize: 14,
-    color: '#6B7280', // gray-500
+    color: '#6B7280',
   },
 });

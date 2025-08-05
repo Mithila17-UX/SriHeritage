@@ -4,9 +4,6 @@ import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-// Note: Replace lucide-react icons with React Native compatible icons
-// import { MapPin, Navigation, Star, Clock, Camera, Heart, Eye } from 'lucide-react';
-// import { ImageWithFallback } from './figma/ImageWithFallback';
 
 interface HomeScreenProps {
   user: { name: string; email: string } | null;
@@ -86,7 +83,6 @@ export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites
   const [selectedSite, setSelectedSite] = useState<number | null>(null);
   const [heritageSites, setHeritageSites] = useState(defaultHeritageSites);
 
-  // Load sites from AsyncStorage
   useEffect(() => {
     const loadSites = async () => {
       try {
@@ -101,8 +97,7 @@ export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites
 
     loadSites();
     
-    // Set up interval to check for updates
-    const interval = setInterval(loadSites, 2000); // Check every 2 seconds
+    const interval = setInterval(loadSites, 2000); 
     
     return () => clearInterval(interval);
   }, []);
@@ -135,15 +130,9 @@ export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites
         </View>
         
         {/* Mock map pins */}
-        <View style={[styles.mapPin, styles.mapPin1, { backgroundColor: '#EF4444' }]}>
-          <Text style={styles.mapPinIcon}>📍</Text>
-        </View>
-        <View style={[styles.mapPin, styles.mapPin2, { backgroundColor: '#3B82F6' }]}>
-          <Text style={styles.mapPinIcon}>📍</Text>
-        </View>
-        <View style={[styles.mapPin, styles.mapPin3, { backgroundColor: '#10B981' }]}>
-          <Text style={styles.mapPinIcon}>📍</Text>
-        </View>
+        <View style={[styles.mapPin, styles.mapPin1, { backgroundColor: '#EF4444' }]}><Text style={styles.mapPinIcon}>📍</Text></View>
+        <View style={[styles.mapPin, styles.mapPin2, { backgroundColor: '#3B82F6' }]}><Text style={styles.mapPinIcon}>📍</Text></View>
+        <View style={[styles.mapPin, styles.mapPin3, { backgroundColor: '#10B981' }]}><Text style={styles.mapPinIcon}>📍</Text></View>
       </View>
 
       {/* Sites List */}
@@ -163,85 +152,48 @@ export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites
                 key={site.id}
                 onPress={() => setSelectedSite(selectedSite === site.id ? null : site.id)}
               >
-                <Card style={[
-                  styles.siteCard,
-                  selectedSite === site.id && styles.selectedSiteCard
-                ]}>
+                <Card style={[styles.siteCard, selectedSite === site.id && styles.selectedSiteCard]}>
                   <CardContent style={styles.siteCardContent}>
-                    <View style={styles.siteRow}>
+                    <View style={styles.cardTopSection}>
                       <View style={styles.siteImageContainer}>
-                        <Image
-                          source={{ uri: site.image }}
-                          style={styles.siteImage}
-                          resizeMode="cover"
-                        />
-                        <View style={styles.cameraOverlay}>
-                          <Text style={styles.cameraIcon}>📷</Text>
-                        </View>
-                        {isVisited && (
-                          <View style={[styles.siteBadge, styles.visitedBadge]}>
-                            <Text style={styles.siteBadgeIcon}>👁️</Text>
-                          </View>
+                        {site.image ? (
+                           <Image source={{ uri: site.image }} style={styles.siteImage} resizeMode="cover" />
+                        ) : (
+                          <View style={styles.noImagePlaceholder}><Text style={styles.noImageText}>📷</Text></View>
                         )}
-                        {isFavorite && (
-                          <View style={[styles.siteBadge, styles.favoriteBadge]}>
-                            <Text style={styles.siteBadgeIcon}>❤️</Text>
-                          </View>
-                        )}
+                        {isVisited && <View style={[styles.badge, styles.visitedBadge]}><Text style={styles.badgeIcon}>👁️</Text></View>}
+                        {isFavorite && <View style={[styles.badge, styles.favoriteBadge]}><Text style={styles.badgeIcon}>❤️</Text></View>}
                       </View>
                       
                       <View style={styles.siteInfo}>
-                        <View style={styles.siteHeader}>
-                          <Text style={styles.siteName} numberOfLines={1}>{site.name}</Text>
-                          <View style={styles.ratingContainer}>
-                            <Text style={styles.starIcon}>⭐</Text>
-                            <Text style={styles.ratingText}>{site.rating}</Text>
-                          </View>
+                        <Text style={styles.siteName} numberOfLines={1}>{site.name}</Text>
+                        <Text style={styles.siteDetailText}>{site.location}</Text>
+                        <Text style={styles.siteDetailText}>{site.distance} away</Text>
+                        <View style={styles.siteMetadata}>
+                          <Badge style={styles.categoryBadge}>{site.category}</Badge>
+                          <Text style={styles.rating}>⭐ {site.rating}</Text>
                         </View>
-                        
-                          <View style={styles.siteMetadata}>
-                            <Badge variant="secondary" style={styles.categoryBadge}>
-                              <Text style={styles.categoryText}>{site.category}</Text>
-                            </Badge>
-                            <Badge style={styles.locationBadge}>
-                              <Text style={styles.locationIcon}>📍</Text>
-                              <Text style={styles.locationText}>{site.location}</Text>
-                            </Badge>
-                            {isVisited && (
-                              <Badge style={styles.visitedLabel}>
-                                <Text style={styles.visitedLabelText}>Visited</Text>
-                              </Badge>
-                            )}
-                          </View>
-                          
-                          <View style={styles.siteFooter}>
-                            <View style={styles.distanceContainer}>
-                              <Text style={styles.clockIcon}>🕐</Text>
-                              <Text style={styles.distanceText}>{site.distance} away</Text>
-                            </View>
-                            <TouchableOpacity 
-                              style={styles.detailsButton}
-                              onPress={(e) => {
-                                e.stopPropagation();
-                                onNavigateToSite(site);
-                              }}
-                            >
-                              <Text style={styles.detailsButtonText}>View Details</Text>
-                            </TouchableOpacity>
-                          </View>
                       </View>
+                    </View>
+                    
+                    <View style={styles.siteActions}>
+                      <TouchableOpacity 
+                        style={styles.detailsButton}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          onNavigateToSite(site);
+                        }}
+                      >
+                        <Text style={styles.detailsButtonText}>View Details</Text>
+                      </TouchableOpacity>
                     </View>
                     
                     {selectedSite === site.id && (
                       <View style={styles.expandedContent}>
                         <Text style={styles.siteDescription}>{site.description}</Text>
                         <View style={styles.actionButtons}>
-                          <TouchableOpacity style={styles.primaryButton}>
-                            <Text style={styles.primaryButtonText}>Get Directions</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity style={styles.secondaryButton}>
-                            <Text style={styles.secondaryButtonText}>Book a Ride</Text>
-                          </TouchableOpacity>
+                          <TouchableOpacity style={styles.primaryButton}><Text style={styles.primaryButtonText}>Get Directions</Text></TouchableOpacity>
+                          <TouchableOpacity style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Book a Ride</Text></TouchableOpacity>
                         </View>
                       </View>
                     )}
@@ -257,342 +209,58 @@ export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB', // gray-50
-  },
-  header: {
-    backgroundColor: '#2563EB', // blue-600
-    paddingTop: 32,
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  headerIconContainer: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerIcon: {
-    fontSize: 24,
-    color: '#FFFFFF',
-  },
-  headerText: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#D1FAE5', // green-100
-  },
-  // Map Area
-  mapContainer: {
-    height: 256,
-    backgroundColor: '#DCFCE7', // green-100 to blue-100 approximation
-    position: 'relative',
-  },
-  mapPlaceholder: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  mapCenter: {
-    alignItems: 'center',
-  },
-  mapIcon: {
-    width: 64,
-    height: 64,
-    backgroundColor: '#EA580C', // orange-600
-    borderRadius: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  mapIconText: {
-    fontSize: 24,
-  },
-  mapTitle: {
-    fontSize: 16,
-    color: '#4B5563', // gray-600
-    marginBottom: 4,
-  },
-  mapSubtitle: {
-    fontSize: 14,
-    color: '#6B7280', // gray-500
-  },
-  mapPin: {
-    position: 'absolute',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  mapPin1: {
-    top: 48,
-    left: 64,
-  },
-  mapPin2: {
-    top: 80,
-    right: 80,
-  },
-  mapPin3: {
-    bottom: 64,
-    left: '33%',
-  },
-  mapPinIcon: {
-    fontSize: 16,
-  },
-  // Sites List
-  listContainer: {
-    flex: 1,
-  },
-  listContent: {
-    padding: 16,
-  },
-  listHeader: {
-    marginBottom: 16,
-  },
-  listTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#111827', // gray-900
-    marginBottom: 4,
-  },
-  listSubtitle: {
-    fontSize: 14,
-    color: '#4B5563', // gray-600
-  },
-  sitesList: {
-    gap: 16,
-  },
-  siteCard: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  selectedSiteCard: {
-    borderColor: '#FB923C', // orange-400
-  },
-  siteCardContent: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-  },
-  siteRow: {
-    flexDirection: 'row',
-    gap: 16,
-    alignItems: 'center',
-  },
-  siteImageContainer: {
-    position: 'relative',
-    width: 80,
-    height: 80,
-  },
-  siteImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
-  },
-  cameraOverlay: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    borderRadius: 12,
-    width: 24,
-    height: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  cameraIcon: {
-    fontSize: 12,
-  },
-  siteBadge: {
-    position: 'absolute',
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  visitedBadge: {
-    bottom: 4,
-    left: 4,
-    backgroundColor: '#10B981', // green-500
-  },
-  favoriteBadge: {
-    bottom: 4,
-    right: 4,
-    backgroundColor: '#EF4444', // red-500
-  },
-  siteBadgeIcon: {
-    fontSize: 12,
-  },
-  siteInfo: {
-    flex: 1,
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  siteHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-  },
-  siteName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827', // gray-900
-    flex: 1,
-    marginRight: 8,
-  },
-  ratingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  starIcon: {
-    fontSize: 14,
-  },
-  ratingText: {
-    fontSize: 14,
-    color: '#4B5563', // gray-600
-  },
-  siteMetadata: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  categoryBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  categoryText: {
-    fontSize: 12,
-  },
-  locationBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#E0E7FF', // A light indigo color
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  locationIcon: {
-    fontSize: 12,
-    marginRight: 4,
-  },
-  locationText: {
-    fontSize: 12,
-    color: '#4338CA', // A deep indigo color
-  },
-  visitedLabel: {
-    backgroundColor: '#DCFCE7', // green-100
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  visitedLabelText: {
-    fontSize: 12,
-    color: '#166534', // green-800
-  },
-  siteFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  distanceContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  clockIcon: {
-    fontSize: 12,
-  },
-  distanceText: {
-    fontSize: 14,
-    color: '#6B7280', // gray-500
-  },
-  detailsButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: '#FED7AA', // orange-200
-    borderRadius: 6,
-    backgroundColor: '#FFF7ED', // orange-50
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  detailsButtonText: {
-    fontSize: 14,
-    color: '#EA580C', // orange-600
-    fontWeight: '500',
-  },
-  // Expanded Content
-  expandedContent: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6', // gray-100
-  },
-  siteDescription: {
-    fontSize: 14,
-    color: '#4B5563', // gray-600
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  primaryButton: {
-    flex: 1,
-    backgroundColor: '#EA580C', // orange-600
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 6,
-    alignItems: 'center',
-  },
-  primaryButtonText: {
-    fontSize: 14,
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  secondaryButton: {
-    flex: 1,
-    backgroundColor: 'transparent',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#D1D5DB', // gray-300
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  secondaryButtonText: {
-    fontSize: 14,
-    color: '#374151', // gray-700
-    fontWeight: '500',
-  },
+  container: { flex: 1, backgroundColor: '#F9FAFB' },
+  header: { backgroundColor: '#2563EB', paddingTop: 32, paddingHorizontal: 16, paddingBottom: 16 },
+  headerContent: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  headerIconContainer: { backgroundColor: 'rgba(255, 255, 255, 0.2)', width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
+  headerIcon: { fontSize: 24, color: '#FFFFFF' },
+  headerText: { flex: 1 },
+  headerTitle: { fontSize: 22, fontWeight: '700', color: '#FFFFFF', marginBottom: 4 },
+  headerSubtitle: { fontSize: 14, color: '#D1FAE5' },
+  mapContainer: { height: 256, backgroundColor: '#DCFCE7', position: 'relative' },
+  mapPlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  mapCenter: { alignItems: 'center' },
+  mapIcon: { width: 64, height: 64, backgroundColor: '#EA580C', borderRadius: 32, justifyContent: 'center', alignItems: 'center', marginBottom: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 8, elevation: 8 },
+  mapIconText: { fontSize: 24 },
+  mapTitle: { fontSize: 16, color: '#4B5563', marginBottom: 4 },
+  mapSubtitle: { fontSize: 14, color: '#6B7280' },
+  mapPin: { position: 'absolute', width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 4 },
+  mapPin1: { top: 48, left: 64 },
+  mapPin2: { top: 80, right: 80 },
+  mapPin3: { bottom: 64, left: '33%' },
+  mapPinIcon: { fontSize: 16 },
+  listContainer: { flex: 1 },
+  listContent: { padding: 16 },
+  listHeader: { marginBottom: 16 },
+  listTitle: { fontSize: 18, fontWeight: '600', color: '#111827', marginBottom: 4 },
+  listSubtitle: { fontSize: 14, color: '#4B5563' },
+  sitesList: { gap: 16 },
+  siteCard: { marginBottom: 16, backgroundColor: '#FFFFFF', borderRadius: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5, paddingTop: 16, paddingBottom: 16, borderWidth: 2, borderColor: 'transparent' },
+  selectedSiteCard: { borderColor: '#FB923C' },
+  siteCardContent: { paddingHorizontal: 16, gap: 16 },
+  cardTopSection: { flexDirection: 'row', alignItems: 'flex-start', gap: 16 },
+  siteImageContainer: { width: 100, height: 100, borderRadius: 12, overflow: 'hidden', backgroundColor: '#F3F4F6', position: 'relative' },
+  siteImage: { width: '100%', height: '100%' },
+  noImagePlaceholder: { width: 100, height: 100, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F3F4F6' },
+  noImageText: { fontSize: 30, color: '#9CA3AF' },
+  badge: { position: 'absolute', width: 24, height: 24, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  visitedBadge: { top: 4, right: 4, backgroundColor: '#10B981' },
+  favoriteBadge: { bottom: 4, right: 4, backgroundColor: '#EF4444' },
+  badgeIcon: { fontSize: 12 },
+  siteInfo: { flex: 1 },
+  siteName: { fontSize: 20, fontWeight: 'bold', color: '#111827', marginBottom: 4 },
+  siteDetailText: { fontSize: 14, color: '#4B5563', marginBottom: 2 },
+  siteMetadata: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 10 },
+  categoryBadge: { backgroundColor: '#E0E7FF', color: '#3730A3', fontWeight: '600' },
+  rating: { fontSize: 15, color: '#F59E42', fontWeight: 'bold' },
+  siteActions: { flexDirection: 'row', justifyContent: 'center', marginTop: 12, borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: 16 },
+  detailsButton: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center', backgroundColor: '#FEF3C7' },
+  detailsButtonText: { fontSize: 14, fontWeight: '600', color: '#92400E' },
+  expandedContent: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
+  siteDescription: { fontSize: 14, color: '#4B5563', lineHeight: 20, marginBottom: 12 },
+  actionButtons: { flexDirection: 'row', gap: 8 },
+  primaryButton: { flex: 1, backgroundColor: '#EA580C', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 6, alignItems: 'center' },
+  primaryButtonText: { fontSize: 14, color: '#FFFFFF', fontWeight: '600' },
+  secondaryButton: { flex: 1, backgroundColor: 'transparent', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 6, borderWidth: 1, borderColor: '#D1D5DB', alignItems: 'center', justifyContent: 'center' },
+  secondaryButtonText: { fontSize: 14, color: '#374151', fontWeight: '500' },
 });

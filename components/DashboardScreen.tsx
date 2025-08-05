@@ -5,9 +5,6 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Progress } from './ui/progress';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-// Note: Replace lucide-react icons with React Native compatible icons
-// import { MapPin, Star, Eye, EyeOff, Compass, MessageCircle, Users, Map, Calendar, Trophy, ChevronRight } from 'lucide-react';
-// import { ImageWithFallback } from './figma/ImageWithFallback';
 
 interface DashboardScreenProps {
   user: { name: string; email: string } | null;
@@ -91,7 +88,6 @@ const defaultHeritageSites = [
 export function DashboardScreen({ user, visitedSites, favoriteSites, onNavigateToSite, onNavigateToScreen }: DashboardScreenProps) {
   const [heritageSites, setHeritageSites] = useState(defaultHeritageSites);
 
-  // Load sites from AsyncStorage
   useEffect(() => {
     const loadSites = async () => {
       try {
@@ -106,14 +102,13 @@ export function DashboardScreen({ user, visitedSites, favoriteSites, onNavigateT
 
     loadSites();
     
-    // Set up interval to check for updates
-    const interval = setInterval(loadSites, 2000); // Check every 2 seconds
+    const interval = setInterval(loadSites, 2000); 
     
     return () => clearInterval(interval);
   }, []);
   const visitedCount = visitedSites.length;
   const totalSites = heritageSites.length;
-  const progressPercentage = (visitedCount / totalSites) * 100;
+  const progressPercentage = totalSites > 0 ? (visitedCount / totalSites) * 100 : 0;
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -221,48 +216,53 @@ export function DashboardScreen({ user, visitedSites, favoriteSites, onNavigateT
               </TouchableOpacity>
             </View>
             <View style={styles.sitesContainer}>
-              {recommendedSites.map((site) => (
-                <TouchableOpacity key={site.id} onPress={() => onNavigateToSite(site)}>
-                  <Card style={styles.siteCard}>
-                    <CardContent style={styles.siteCardContent}>
-                      <View style={styles.siteRow}>
-                        <Image
-                          source={{ uri: site.image }}
-                          style={styles.siteImage}
-                          resizeMode="cover"
-                        />
-                        <View style={styles.siteInfo}>
-                          <Text style={styles.siteName} numberOfLines={1}>{site.name}</Text>
-                          <View style={styles.siteMetaRow}>
-                            <Badge style={styles.siteBadge}>
-                              <Text style={styles.siteBadgeText}>{site.category}</Text>
-                            </Badge>
-                            <View style={styles.ratingContainer}>
-                              <Text style={styles.starIcon}>⭐</Text>
-                              <Text style={styles.ratingText}>{site.rating}</Text>
-                            </View>
+            {recommendedSites.map((site) => (
+              <TouchableOpacity key={site.id} onPress={() => onNavigateToSite(site)}>
+                <Card style={styles.recommendedSiteCard}>
+                  <CardContent style={styles.recommendedSiteCardContent}>
+                    <View style={styles.cardTopSection}>
+                      <View style={styles.siteImageContainer}>
+                        {site.image ? (
+                          <Image
+                            source={{ uri: site.image }}
+                            style={styles.siteImage}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={styles.noImagePlaceholder}>
+                            <Text style={styles.noImageText}>📷</Text>
                           </View>
-                          <View style={styles.locationRow}>
-                            <Text style={styles.locationIcon}>📍</Text>
-                            <Text style={styles.locationText}>{site.location} • {site.distance}</Text>
-                          </View>
-                        </View>
-                        <TouchableOpacity style={styles.exploreButton}>
-                          <Text style={styles.exploreButtonText}>🧭 Explore</Text>
-                        </TouchableOpacity>
+                        )}
                       </View>
-                    </CardContent>
-                  </Card>
-                </TouchableOpacity>
-              ))}
-            </View>
+                      
+                      <View style={styles.siteInfo}>
+                        <Text style={styles.siteName} numberOfLines={1}>{site.name}</Text>
+                        <Text style={styles.siteDetailText}>{site.location}</Text>
+                        <Text style={styles.siteDetailText}>{site.district}</Text>
+                        <View style={styles.siteMetadata}>
+                          <Badge style={styles.categoryBadge}>{site.category}</Badge>
+                          <Text style={styles.rating}>⭐ {site.rating}</Text>
+                        </View>
+                      </View>
+                    </View>
+                    
+                    <View style={styles.siteActions}>
+                      <TouchableOpacity style={[styles.exploreButton]}>
+                        <Text style={styles.exploreButtonText}>🧭 Explore</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </CardContent>
+                </Card>
+              </TouchableOpacity>
+            ))}
+          </View>
           </View>
         )}
 
         {/* Recent Activity */}
         <Card style={styles.activityCard}>
           <CardHeader style={styles.activityCardHeader}>
-            <Text style={styles.cardTitle}>Recent Activity</Text>
+            <Text style={styles.cardTitle}>📈 Recent Activity</Text>
           </CardHeader>
           <CardContent style={styles.activityContent}>
             <View style={styles.activityItem}>
@@ -293,10 +293,10 @@ export function DashboardScreen({ user, visitedSites, favoriteSites, onNavigateT
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB', // gray-50
+    backgroundColor: '#F9FAFB',
   },
   header: {
-    backgroundColor: '#0369A1', // A deeper sky blue from the login theme
+    backgroundColor: '#0369A1',
     paddingTop: 32,
     paddingHorizontal: 16,
     paddingBottom: 16,
@@ -330,14 +330,13 @@ const styles = StyleSheet.create({
   },
   subGreetingText: {
     fontSize: 14,
-    color: '#E0F2FE', // A light sky blue for the subtitle
+    color: '#E0F2FE',
   },
   content: {
     padding: 16,
     gap: 24,
     paddingBottom: 48,
   },
-  // Progress Card
   progressCard: {
     backgroundColor: '#FFFFFF',
     borderColor: '#E5E7EB',
@@ -419,14 +418,13 @@ const styles = StyleSheet.create({
   greenText: {
     color: '#16A34A',
   },
-  // Sections
   section: {
     gap: 12,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#111827', // gray-900
+    color: '#111827',
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -438,7 +436,6 @@ const styles = StyleSheet.create({
     color: '#0369A1',
     fontWeight: '500',
   },
-  // Actions Grid
   actionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -454,16 +451,16 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   orangeButton: {
-    backgroundColor: '#2563EB', // Explore Map -> HomeScreen color
+    backgroundColor: '#2563EB',
   },
   greenButton: {
-    backgroundColor: '#0D9488', // All Places -> AllPlacesScreen color
+    backgroundColor: '#0D9488',
   },
   blueButton: {
-    backgroundColor: '#1E3A8A', // Ask AI Guide -> ChatScreen color
+    backgroundColor: '#1E3A8A',
   },
   purpleButton: {
-    backgroundColor: '#0EA5E9', // Join Forum -> ForumScreen color
+    backgroundColor: '#0EA5E9',
   },
   actionIcon: {
     fontSize: 24,
@@ -473,137 +470,153 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#FFFFFF',
   },
-  // Sites
   sitesContainer: {
     gap: 16,
   },
-  siteCard: {
+  recommendedSiteCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    marginBottom: 16,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
+    paddingTop: 16,
+    paddingBottom: 16,
   },
-  siteCardContent: {
+  recommendedSiteCardContent: {
     paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  siteRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 16,
   },
+  cardTopSection: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 16,
+  },
+  siteImageContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#F3F4F6',
+  },
   siteImage: {
-    width: 64,
-    height: 64,
-    borderRadius: 8,
+    width: '100%',
+    height: '100%',
+  },
+  noImagePlaceholder: {
+    width: 100,
+    height: 100,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+  },
+  noImageText: {
+    fontSize: 30,
+    color: '#9CA3AF',
   },
   siteInfo: {
     flex: 1,
-    gap: 8,
   },
   siteName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827', // gray-900
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#111827',
+    marginBottom: 4,
   },
-  siteMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  siteBadge: {
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  siteBadgeText: {
-    fontSize: 12,
-    color: '#1F2937',
-    fontWeight: '500',
-  },
-  ratingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  starIcon: {
-    fontSize: 14,
-    color: '#FBBF24',
-  },
-  ratingText: {
+  siteDetailText: {
     fontSize: 14,
     color: '#4B5563',
+    marginBottom: 2,
   },
-  locationRow: {
+  siteMetadata: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    marginTop: 8,
+    gap: 10,
   },
-  locationIcon: {
-    fontSize: 14,
-    color: '#6B7280',
+  categoryBadge: {
+    backgroundColor: '#E0E7FF',
+    color: '#3730A3',
+    fontWeight: '600',
   },
-  locationText: {
-    fontSize: 14,
-    color: '#6B7280',
+  rating: {
+    fontSize: 15,
+    color: '#F59E42',
+    fontWeight: 'bold',
+  },
+  siteActions: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    paddingTop: 16,
   },
   exploreButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
     backgroundColor: '#E0F2FE',
   },
   exploreButtonText: {
-    fontSize: 12,
-    color: '#0284C7',
+    fontSize: 14,
     fontWeight: '600',
+    color: '#0284C7',
   },
-  // Activity
   activityCard: {
     backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     padding: 16,
-    borderColor: '#E5E7EB',
-    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
   },
   activityCardHeader: {
-    paddingBottom: 12,
+    paddingTop: 8,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
   },
   activityContent: {
     gap: 16,
-    paddingTop: 8,
+    paddingTop: 16,
   },
   activityItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 16,
   },
   activityIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },
   greenBackground: {
-    backgroundColor: '#DCFCE7', // green-100
+    backgroundColor: '#DCFCE7',
   },
   blueBackground: {
-    backgroundColor: '#DBEAFE', // blue-100
+    backgroundColor: '#DBEAFE',
   },
   activityEmoji: {
-    fontSize: 16,
+    fontSize: 18,
   },
   activityText: {
     flex: 1,
   },
   activityTitle: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#111827', // gray-900
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
     marginBottom: 2,
   },
   activityTime: {
-    fontSize: 12,
-    color: '#6B7280', // gray-500
+    fontSize: 14,
+    color: '#6B7280',
   },
 });
