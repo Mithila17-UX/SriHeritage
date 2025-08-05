@@ -339,7 +339,7 @@ export function SiteInformationPage({
         </Card>
 
         {/* Gallery Preview */}
-        {site.gallery && site.gallery.length > 0 && (
+        {Array.isArray(site.gallery) && site.gallery.length > 0 && (
           <Card style={styles.galleryCard}>
             <CardContent style={[styles.galleryCardContent, { paddingTop: 16, paddingBottom: 16 }]}>
               <Text style={styles.sectionTitle}>Gallery</Text>

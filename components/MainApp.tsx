@@ -100,8 +100,6 @@ export function MainApp({ user, onLogout }: MainAppProps) {
           <AllPlacesScreen 
             user={user}
             onNavigateToSite={handleNavigateToSite}
-            favoriteSites={favoriteSites}
-            visitedSites={visitedSites}
           />
         );
       case 'chat':

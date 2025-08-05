@@ -6,6 +6,7 @@ import { Input } from './ui/input';
 import { Badge } from './ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { databaseService, syncService, authService, Site } from '../services';
 // Note: Replace lucide-react icons with React Native compatible icons
 // import { MapPin, Navigation, Star, Search, Filter, Heart, Eye, SortAsc } from 'lucide-react';
 // import { ImageWithFallback } from './figma/ImageWithFallback';
@@ -13,144 +14,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 interface AllPlacesScreenProps {
   user: { name: string; email: string } | null;
   onNavigateToSite: (site: any) => void;
-  favoriteSites: number[];
-  visitedSites: number[];
 }
 
-const defaultPlaces = [
-  {
-    id: 1,
-    name: 'Temple of the Sacred Tooth Relic',
-    location: 'Kandy',
-    district: 'Kandy',
-    distance: '2.3 km',
-    rating: 4.8,
-    image: 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=400&h=300&fit=crop',
-    category: 'Temple',
-    description: 'A Buddhist temple that houses the relic of the tooth of the Buddha. One of the most sacred Buddhist sites.',
-    openingHours: 'Daily: 5:30 AM - 8:00 PM',
-    entranceFee: 'Local: LKR 50, Foreign: LKR 1,000',
-    gallery: [
-      'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=800&h=600&fit=crop',
-      'https://images.unsplash.com/photo-1571715268652-3c2247e38d3e?w=800&h=600&fit=crop'
-    ]
-  },
-  {
-    id: 2,
-    name: 'Sigiriya Rock Fortress',
-    location: 'Sigiriya',
-    district: 'Matale',
-    distance: '45.2 km',
-    rating: 4.9,
-    image: 'https://images.unsplash.com/photo-1571715268652-3c2247e38d3e?w=400&h=300&fit=crop',
-    category: 'Ancient City',
-    description: 'An ancient rock fortress and palace with magnificent frescoes. UNESCO World Heritage Site.',
-    openingHours: 'Daily: 7:00 AM - 5:30 PM',
-    entranceFee: 'Local: LKR 60, Foreign: USD 30',
-    gallery: [
-      'https://images.unsplash.com/photo-1571715268652-3c2247e38d3e?w=800&h=600&fit=crop',
-      'https://images.unsplash.com/photo-1587474260584-136574528ed5?w=800&h=600&fit=crop'
-    ]
-  },
-  {
-    id: 3,
-    name: 'Galle Fort',
-    location: 'Galle',
-    district: 'Galle',
-    distance: '78.5 km',
-    rating: 4.7,
-    image: 'https://images.unsplash.com/photo-1587474260584-136574528ed5?w=400&h=300&fit=crop',
-    category: 'Colonial Fort',
-    description: 'A 17th-century fort built by the Portuguese and later fortified by the Dutch. Charming colonial architecture.',
-    openingHours: 'Daily: 6:00 AM - 6:00 PM',
-    entranceFee: 'Free entry to fort area',
-    gallery: [
-      'https://images.unsplash.com/photo-1587474260584-136574528ed5?w=800&h=600&fit=crop',
-      'https://images.unsplash.com/photo-1575484470027-8d85bbf23b62?w=800&h=600&fit=crop'
-    ]
-  },
-  {
-    id: 4,
-    name: 'Dambulla Cave Temple',
-    location: 'Dambulla',
-    district: 'Matale',
-    distance: '52.1 km',
-    rating: 4.6,
-    image: 'https://images.unsplash.com/photo-1575484470027-8d85bbf23b62?w=400&h=300&fit=crop',
-    category: 'Cave Temple',
-    description: 'The largest and best-preserved cave temple complex in Sri Lanka with ancient Buddhist paintings.',
-    openingHours: 'Daily: 7:00 AM - 7:00 PM',
-    entranceFee: 'Local: LKR 500, Foreign: USD 10',
-    gallery: [
-      'https://images.unsplash.com/photo-1575484470027-8d85bbf23b62?w=800&h=600&fit=crop',
-      'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=800&h=600&fit=crop'
-    ]
-  },
-  {
-    id: 5,
-    name: 'Polonnaruwa Ancient City',
-    location: 'Polonnaruwa',
-    district: 'Polonnaruwa',
-    distance: '65.8 km',
-    rating: 4.5,
-    image: 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=400&h=300&fit=crop',
-    category: 'Ancient City',
-    description: 'Medieval capital of Sri Lanka with well-preserved ruins and ancient architecture.',
-    openingHours: 'Daily: 7:00 AM - 6:00 PM',
-    entranceFee: 'Local: LKR 60, Foreign: USD 25',
-    gallery: [
-      'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=800&h=600&fit=crop'
-    ]
-  },
-  {
-    id: 6,
-    name: 'Anuradhapura Sacred City',
-    location: 'Anuradhapura',
-    district: 'Anuradhapura',
-    distance: '95.2 km',
-    rating: 4.4,
-    image: 'https://images.unsplash.com/photo-1609137144043-8b1dcb1d6b95?w=400&h=300&fit=crop',
-    category: 'Ancient City',
-    description: 'First capital of Sri Lanka with magnificent stupas and ancient Buddhist monasteries.',
-    openingHours: 'Daily: 6:00 AM - 6:00 PM',
-    entranceFee: 'Local: LKR 60, Foreign: USD 25',
-    gallery: [
-      'https://images.unsplash.com/photo-1609137144043-8b1dcb1d6b95?w=800&h=600&fit=crop'
-    ]
-  },
-  {
-    id: 7,
-    name: 'Ella Rock',
-    location: 'Ella',
-    district: 'Badulla',
-    distance: '120.5 km',
-    rating: 4.3,
-    image: 'https://images.unsplash.com/photo-1566552881560-0be862a7c445?w=400&h=300&fit=crop',
-    category: 'Natural Site',
-    description: 'Popular hiking destination with breathtaking views of the hill country and tea plantations.',
-    openingHours: 'Daily: 5:00 AM - 6:00 PM',
-    entranceFee: 'Free access',
-    gallery: [
-      'https://images.unsplash.com/photo-1566552881560-0be862a7c445?w=800&h=600&fit=crop'
-    ]
-  },
-  {
-    id: 8,
-    name: 'Yala National Park',
-    location: 'Yala',
-    district: 'Hambantota',
-    distance: '165.3 km',
-    rating: 4.6,
-    image: 'https://images.unsplash.com/photo-1549366021-9f761d040fff?w=400&h=300&fit=crop',
-    category: 'National Park',
-    description: 'Famous wildlife sanctuary known for leopards, elephants, and diverse bird species.',
-    openingHours: 'Daily: 6:00 AM - 6:00 PM',
-    entranceFee: 'Local: LKR 1,500, Foreign: USD 20',
-    gallery: [
-      'https://images.unsplash.com/photo-1549366021-9f761d040fff?w=800&h=600&fit=crop'
-    ]
-  }
-];
+const defaultPlaces: any[] = [];
 
 const districts = [
   'All Districts',
@@ -163,34 +29,311 @@ const districts = [
   'Hambantota'
 ];
 
-export function AllPlacesScreen({ user, onNavigateToSite, favoriteSites, visitedSites }: AllPlacesScreenProps) {
+export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDistrict, setSelectedDistrict] = useState('All Districts');
   const [sortBy, setSortBy] = useState('proximity');
-  const [allPlaces, setAllPlaces] = useState(defaultPlaces);
+  const [allPlaces, setAllPlaces] = useState<Site[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [favoriteSites, setFavoriteSites] = useState<number[]>([]);
+  const [visitedSites, setVisitedSites] = useState<number[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  // Load sites from AsyncStorage
+  // Initialize and load data - bypassing SQLite due to corruption
   useEffect(() => {
-    const loadSites = async () => {
+    const initializeAndLoadData = async () => {
       try {
-        const storedSites = await AsyncStorage.getItem('sri-heritage-sites');
-        if (storedSites) {
-          setAllPlaces(JSON.parse(storedSites));
+        setLoading(true);
+        console.log('🏛️ AllPlacesScreen: Starting initialization...');
+        console.log('🔍 Current allPlaces length:', allPlaces.length);
+        
+        // Get current user ID
+        const userId = await AsyncStorage.getItem('userId') || authService.getCurrentUserId();
+        setCurrentUserId(userId);
+        console.log('👤 Current user ID:', userId);
+        
+        // Try to load from Firestore directly (bypassing SQLite)
+        console.log('🔄 Attempting direct Firestore fetch...');
+        let sitesToDisplay = [];
+        
+        try {
+          const { firestore } = await import('../services/firebase');
+          const { collection, getDocs } = await import('firebase/firestore');
+          
+          const sitesCollection = collection(firestore, 'sites');
+          const sitesSnapshot = await getDocs(sitesCollection);
+          
+          console.log('📊 Firestore direct query result:', sitesSnapshot.size, 'documents');
+          
+          if (sitesSnapshot.size > 0) {
+            const firestoreSites: any[] = [];
+            sitesSnapshot.forEach((doc) => {
+              const data = doc.data();
+              console.log('📄 Processing Firestore document:', doc.id, data);
+              
+              // Handle ID more robustly
+              let siteId: number;
+              if (!isNaN(parseInt(doc.id))) {
+                siteId = parseInt(doc.id);
+              } else {
+                // If doc.id is not a number, generate a hash-based ID
+                siteId = Math.abs(doc.id.split('').reduce((a, b) => {
+                  a = ((a << 5) - a) + b.charCodeAt(0);
+                  return a & a;
+                }, 0));
+              }
+              
+              const siteData = {
+                id: siteId,
+                name: data.name || '',
+                description: data.description || '',
+                location: data.location || '',
+                latitude: data.coordinates?.latitude || data.latitude || 0,
+                longitude: data.coordinates?.longitude || data.longitude || 0,
+                category: data.category || '',
+                image_url: data.image || data.image_url || '',
+                historical_period: data.historical_period || '',
+                significance: data.significance || '',
+                visiting_hours: data.openingHours || data.visiting_hours || '',
+                entry_fee: data.entranceFee || data.entry_fee || '',
+                // Admin panel compatibility fields
+                district: data.district || '',
+                distance: data.distance || `${(Math.random() * 100).toFixed(1)} km`,
+                rating: data.rating || 4.5,
+                image: data.image || data.image_url || '',
+                openingHours: data.openingHours || data.visiting_hours || '',
+                entranceFee: data.entranceFee || data.entry_fee || '',
+                gallery: data.gallery ? (Array.isArray(data.gallery) ? data.gallery : []) : [],
+                updated_at: new Date().toISOString() // Mark as from Firestore
+              };
+              
+              firestoreSites.push(siteData);
+            });
+            
+            // Combine with default places (but prioritize Firestore data)
+            const defaultSitesNotInFirestore = defaultPlaces.filter(
+              defaultSite => !firestoreSites.some(fSite => 
+                fSite.name.toLowerCase() === defaultSite.name.toLowerCase()
+              )
+            );
+            
+            sitesToDisplay = [...firestoreSites, ...defaultSitesNotInFirestore];
+            console.log('✅ Combined sites from Firestore + defaults:', sitesToDisplay.length);
+            
+            // Cache the sites in AsyncStorage for offline use
+            try {
+              await AsyncStorage.setItem('cached_sites', JSON.stringify(sitesToDisplay));
+              console.log('✅ Sites cached in AsyncStorage');
+            } catch (cacheError) {
+              console.warn('⚠️ Failed to cache sites:', cacheError);
+            }
+          } else {
+            console.log('⚠️ No sites in Firestore, using defaults');
+            sitesToDisplay = defaultPlaces.map((site: any) => ({
+              ...site,
+              latitude: (site as any).latitude || 0,
+              longitude: (site as any).longitude || 0,
+              created_at: (site as any).created_at || new Date().toISOString(),
+              updated_at: (site as any).updated_at || new Date().toISOString(),
+              gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : [])
+            }));
+          }
+        } catch (firestoreError) {
+          console.error('❌ Firestore direct fetch failed:', firestoreError);
+          console.log('🔄 Trying cached data from AsyncStorage...');
+          
+          // Try to load cached data
+          try {
+            const cachedSites = await AsyncStorage.getItem('cached_sites');
+            if (cachedSites) {
+              sitesToDisplay = JSON.parse(cachedSites);
+              console.log('✅ Loaded cached sites:', sitesToDisplay.length);
+            } else {
+              console.log('⚠️ No cached data, using defaults');
+              sitesToDisplay = defaultPlaces.map((site: any) => ({
+                ...site,
+                latitude: (site as any).latitude || 0,
+                longitude: (site as any).longitude || 0,
+                created_at: (site as any).created_at || new Date().toISOString(),
+                updated_at: (site as any).updated_at || new Date().toISOString(),
+                gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : [])
+              }));
+            }
+          } catch (cacheError) {
+            console.error('❌ Failed to load cached data:', cacheError);
+            sitesToDisplay = defaultPlaces.map((site: any) => ({
+              ...site,
+              latitude: (site as any).latitude || 0,
+              longitude: (site as any).longitude || 0,
+              created_at: (site as any).created_at || new Date().toISOString(),
+              updated_at: (site as any).updated_at || new Date().toISOString(),
+              gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : [])
+            }));
+          }
         }
+        
+        // Format sites for display
+        const formattedSites = sitesToDisplay.map((site: any) => ({
+          ...site,
+          distance: site.distance || `${(Math.random() * 100).toFixed(1)} km`,
+          rating: site.rating || 4.5,
+          image: site.image || site.image_url || 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=400&h=300&fit=crop',
+          openingHours: site.openingHours || site.visiting_hours || 'Daily: 6:00 AM - 6:00 PM',
+          entranceFee: site.entranceFee || site.entry_fee || 'Free entry',
+          gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : []),
+          latitude: site.latitude || 0,
+          longitude: site.longitude || 0,
+          created_at: site.created_at || new Date().toISOString(),
+          updated_at: site.updated_at || new Date().toISOString()
+        }));
+        
+        setAllPlaces(formattedSites);
+        console.log('✅ Sites set for display:', formattedSites.length);
+        console.log('🔍 Formatted sites data:', formattedSites.map(site => ({ id: site.id, name: site.name })));
+        
+        // Load user preferences from AsyncStorage (bypassing SQLite)
+        if (userId) {
+          try {
+            const favoritesKey = `favorites_${userId}`;
+            const visitedKey = `visited_${userId}`;
+            
+            const [cachedFavorites, cachedVisited] = await Promise.all([
+              AsyncStorage.getItem(favoritesKey),
+              AsyncStorage.getItem(visitedKey)
+            ]);
+            
+            const favoriteIds = cachedFavorites ? JSON.parse(cachedFavorites) : [];
+            const visitedIds = cachedVisited ? JSON.parse(cachedVisited) : [];
+            
+            setFavoriteSites(favoriteIds);
+            setVisitedSites(visitedIds);
+            console.log('✅ User preferences loaded from AsyncStorage - Favorites:', favoriteIds.length, 'Visited:', visitedIds.length);
+          } catch (prefsError) {
+            console.error('❌ Failed to load user preferences:', prefsError);
+            setFavoriteSites([]);
+            setVisitedSites([]);
+          }
+        }
+        
       } catch (error) {
-        console.error('Error loading sites:', error);
+        console.error('❌ Error initializing AllPlacesScreen:', error);
+        console.log('🔄 Using default places as final fallback');
+        setAllPlaces(defaultPlaces.map((site: any) => ({
+          ...site,
+          latitude: (site as any).latitude || 0,
+          longitude: (site as any).longitude || 0,
+          created_at: (site as any).created_at || new Date().toISOString(),
+          updated_at: (site as any).updated_at || new Date().toISOString(),
+          gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : [])
+        })));
+      } finally {
+        setLoading(false);
+        console.log('✅ AllPlacesScreen initialization complete');
       }
     };
 
-    loadSites();
-    
-    // Set up interval to check for updates
-    const interval = setInterval(loadSites, 2000); // Check every 2 seconds
-    
-    return () => clearInterval(interval);
+    initializeAndLoadData();
   }, []);
 
+  // Handle favorite toggle - using AsyncStorage instead of SQLite
+  const handleToggleFavorite = async (siteId: number) => {
+    if (!currentUserId) {
+      Alert.alert('Login Required', 'Please log in to add favorites');
+      return;
+    }
+
+    try {
+      const isFavorite = favoriteSites.includes(siteId);
+      const favoritesKey = `favorites_${currentUserId}`;
+      
+      let updatedFavorites;
+      if (isFavorite) {
+        updatedFavorites = favoriteSites.filter(id => id !== siteId);
+        setFavoriteSites(updatedFavorites);
+      } else {
+        updatedFavorites = [...favoriteSites, siteId];
+        setFavoriteSites(updatedFavorites);
+      }
+      
+      // Save to AsyncStorage
+      await AsyncStorage.setItem(favoritesKey, JSON.stringify(updatedFavorites));
+      console.log('✅ Favorites updated in AsyncStorage:', updatedFavorites.length);
+      
+      // Try to sync to Firebase if online
+      try {
+        const { firestore } = await import('../services/firebase');
+        const { doc, setDoc } = await import('firebase/firestore');
+        
+        const userRef = doc(firestore, 'users', currentUserId);
+        await setDoc(userRef, {
+          favoriteSites: updatedFavorites,
+          favoritesLastSynced: new Date().toISOString()
+        }, { merge: true });
+        console.log('✅ Favorites synced to Firebase');
+      } catch (syncError) {
+        console.warn('⚠️ Failed to sync favorites to Firebase:', syncError);
+      }
+    } catch (error) {
+      console.error('❌ Error toggling favorite:', error);
+      Alert.alert('Error', 'Failed to update favorite status');
+    }
+  };
+
+  // Handle visited toggle - using AsyncStorage instead of SQLite
+  const handleToggleVisited = async (siteId: number) => {
+    if (!currentUserId) {
+      Alert.alert('Login Required', 'Please log in to mark as visited');
+      return;
+    }
+
+    try {
+      const isVisited = visitedSites.includes(siteId);
+      const visitedKey = `visited_${currentUserId}`;
+      
+      let updatedVisited;
+      if (isVisited) {
+        updatedVisited = visitedSites.filter(id => id !== siteId);
+        setVisitedSites(updatedVisited);
+      } else {
+        updatedVisited = [...visitedSites, siteId];
+        setVisitedSites(updatedVisited);
+      }
+      
+      // Save to AsyncStorage
+      await AsyncStorage.setItem(visitedKey, JSON.stringify(updatedVisited));
+      console.log('✅ Visited sites updated in AsyncStorage:', updatedVisited.length);
+      
+      // Try to sync to Firebase if online
+      try {
+        const { firestore } = await import('../services/firebase');
+        const { doc, setDoc } = await import('firebase/firestore');
+        
+        const visitedData = updatedVisited.map(id => ({
+          site_id: id,
+          visited_at: new Date().toISOString(),
+          notes: ''
+        }));
+        
+        const userRef = doc(firestore, 'users', currentUserId);
+        await setDoc(userRef, {
+          visitedSites: visitedData,
+          visitedLastSynced: new Date().toISOString()
+        }, { merge: true });
+        console.log('✅ Visited sites synced to Firebase');
+      } catch (syncError) {
+        console.warn('⚠️ Failed to sync visited sites to Firebase:', syncError);
+      }
+    } catch (error) {
+      console.error('❌ Error toggling visited:', error);
+      Alert.alert('Error', 'Failed to update visited status');
+    }
+  };
+
   const filteredAndSortedPlaces = useMemo(() => {
+    console.log('🔍 Filtering and sorting - allPlaces length:', allPlaces.length);
+    console.log('🔍 Search query:', searchQuery);
+    console.log('🔍 Selected district:', selectedDistrict);
+    
     let filtered = allPlaces;
 
     // Filter by search query
@@ -201,29 +344,55 @@ export function AllPlacesScreen({ user, onNavigateToSite, favoriteSites, visited
         place.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
         place.category.toLowerCase().includes(searchQuery.toLowerCase())
       );
+      console.log('🔍 After search filter:', filtered.length);
     }
 
     // Filter by district
     if (selectedDistrict !== 'All Districts') {
       filtered = filtered.filter(place => place.district === selectedDistrict);
+      console.log('🔍 After district filter:', filtered.length);
     }
 
     // Sort places
+    let sorted;
     switch (sortBy) {
       case 'proximity':
-        return filtered.sort((a, b) => parseFloat(a.distance) - parseFloat(b.distance));
+        sorted = filtered.sort((a, b) => parseFloat(a.distance) - parseFloat(b.distance));
+        break;
       case 'rating':
-        return filtered.sort((a, b) => b.rating - a.rating);
+        sorted = filtered.sort((a, b) => b.rating - a.rating);
+        break;
       case 'name':
-        return filtered.sort((a, b) => a.name.localeCompare(b.name));
+        sorted = filtered.sort((a, b) => a.name.localeCompare(b.name));
+        break;
       default:
-        return filtered;
+        sorted = filtered;
     }
-  }, [searchQuery, selectedDistrict, sortBy]);
+    
+    console.log('🔍 Final filtered and sorted result:', sorted.length);
+    return sorted;
+  }, [allPlaces, searchQuery, selectedDistrict, sortBy]);
 
   const handleGetDirections = (place: any) => {
     Alert.alert('Directions', `Getting directions to ${place.name}...`);
   };
+
+  // Check if we need to reload data (in case of navigation issues)
+  if (!loading && allPlaces.length === 0) {
+    console.log('🔄 No places loaded and not loading, this might indicate a navigation issue');
+  }
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <View style={styles.loadingContent}>
+          <Text style={styles.loadingText}>🏛️</Text>
+          <Text style={styles.loadingTitle}>Loading Heritage Sites...</Text>
+          <Text style={styles.loadingSubtitle}>Syncing with latest data</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -234,9 +403,204 @@ export function AllPlacesScreen({ user, onNavigateToSite, favoriteSites, visited
             <Text style={styles.headerTitle}>All Places in Sri Lanka</Text>
             <Text style={styles.headerSubtitle}>Discover {allPlaces.length} heritage sites across the island</Text>
           </View>
-          <Badge style={styles.headerBadge}>
-            <Text style={styles.headerBadgeText}>{filteredAndSortedPlaces.length} places</Text>
-          </Badge>
+          <View style={styles.headerActions}>
+            <TouchableOpacity 
+              onPress={async () => {
+                console.log('🔄 Database reset triggered');
+                setLoading(true);
+                try {
+                  Alert.alert(
+                    'Reset Database',
+                    'This will reset the database and reload all data. Continue?',
+                    [
+                      { text: 'Cancel', style: 'cancel', onPress: () => setLoading(false) },
+                      { 
+                        text: 'Reset', 
+                        style: 'destructive', 
+                        onPress: async () => {
+                          try {
+                            console.log('🔄 Resetting database...');
+                            await databaseService.resetDatabase();
+                            console.log('✅ Database reset complete');
+                            
+                            // Force sync from Firestore after reset
+                            console.log('🔄 Syncing from Firestore after reset...');
+                            await syncService.syncSitesFromFirestore();
+                            
+                            // Reload sites
+                            const sites = await databaseService.getAllSites();
+                            console.log('📊 Sites after reset and sync:', sites.length);
+                            
+                            if (sites.length === 0) {
+                              setAllPlaces(defaultPlaces.map((site: any) => ({
+                                ...site,
+                                latitude: (site as any).latitude || 0,
+                                longitude: (site as any).longitude || 0,
+                                created_at: (site as any).created_at || new Date().toISOString(),
+                                updated_at: (site as any).updated_at || new Date().toISOString(),
+                                gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : [])
+                              })));
+                            } else {
+                              const formattedSites = sites.map((site: any) => ({
+                                ...site,
+                                distance: site.distance || `${(Math.random() * 100).toFixed(1)} km`,
+                                rating: site.rating || 4.5,
+                                image: site.image || site.image_url || 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=400&h=300&fit=crop',
+                                openingHours: site.openingHours || site.visiting_hours || 'Daily: 6:00 AM - 6:00 PM',
+                                entranceFee: site.entranceFee || site.entry_fee || 'Free entry',
+                                gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : []),
+                                latitude: site.latitude || 0,
+                                longitude: site.longitude || 0,
+                                created_at: site.created_at || new Date().toISOString(),
+                                updated_at: site.updated_at || new Date().toISOString()
+                              }));
+                              setAllPlaces(formattedSites);
+                            }
+                            
+                            Alert.alert('Success', 'Database reset and synced successfully!');
+                          } catch (resetError) {
+                            console.error('❌ Error resetting database:', resetError);
+                            Alert.alert('Error', 'Failed to reset database. Using default data.');
+                            setAllPlaces(defaultPlaces.map((site: any) => ({
+                              ...site,
+                              latitude: (site as any).latitude || 0,
+                              longitude: (site as any).longitude || 0,
+                              created_at: (site as any).created_at || new Date().toISOString(),
+                              updated_at: (site as any).updated_at || new Date().toISOString(),
+                              gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : [])
+                            })));
+                          } finally {
+                            setLoading(false);
+                          }
+                        }
+                      }
+                    ]
+                  );
+                } catch (error) {
+                  console.error('❌ Error in reset flow:', error);
+                  setLoading(false);
+                }
+              }}
+              style={styles.resetButton}
+            >
+              <Text style={styles.refreshButtonText}>🔄</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              onPress={async () => {
+                console.log('🔄 Manual refresh triggered');
+                setLoading(true);
+                
+                try {
+                  console.log('🔄 Refreshing from Firestore...');
+                  
+                  // Direct Firestore fetch
+                  const { firestore } = await import('../services/firebase');
+                  const { collection, getDocs } = await import('firebase/firestore');
+                  
+                  const sitesCollection = collection(firestore, 'sites');
+                  const sitesSnapshot = await getDocs(sitesCollection);
+                  
+                  console.log('📊 Refresh - Firestore query result:', sitesSnapshot.size, 'documents');
+                  
+                  let sitesToDisplay = [];
+                  
+                  if (sitesSnapshot.size > 0) {
+                    const firestoreSites: any[] = [];
+                    sitesSnapshot.forEach((doc) => {
+                      const data = doc.data();
+                      console.log('📄 Refresh - Processing document:', doc.id, data);
+                      
+                      // Handle ID more robustly
+                      let siteId: number;
+                      if (!isNaN(parseInt(doc.id))) {
+                        siteId = parseInt(doc.id);
+                      } else {
+                        siteId = Math.abs(doc.id.split('').reduce((a, b) => {
+                          a = ((a << 5) - a) + b.charCodeAt(0);
+                          return a & a;
+                        }, 0));
+                      }
+                      
+                      const siteData = {
+                        id: siteId,
+                        name: data.name || '',
+                        description: data.description || '',
+                        location: data.location || '',
+                        latitude: data.coordinates?.latitude || data.latitude || 0,
+                        longitude: data.coordinates?.longitude || data.longitude || 0,
+                        category: data.category || '',
+                        image_url: data.image || data.image_url || '',
+                        district: data.district || '',
+                        distance: data.distance || `${(Math.random() * 100).toFixed(1)} km`,
+                        rating: data.rating || 4.5,
+                        image: data.image || data.image_url || '',
+                        openingHours: data.openingHours || data.visiting_hours || '',
+                        entranceFee: data.entranceFee || data.entry_fee || '',
+                        gallery: data.gallery ? (Array.isArray(data.gallery) ? data.gallery : []) : [],
+                        updated_at: new Date().toISOString()
+                      };
+                      
+                      firestoreSites.push(siteData);
+                    });
+                    
+                    // Combine with defaults
+                    const defaultSitesNotInFirestore = defaultPlaces.filter(
+                      defaultSite => !firestoreSites.some(fSite => 
+                        fSite.name.toLowerCase() === defaultSite.name.toLowerCase()
+                      )
+                    );
+                    
+                    sitesToDisplay = [...firestoreSites, ...defaultSitesNotInFirestore];
+                    
+                    // Update cache
+                    await AsyncStorage.setItem('cached_sites', JSON.stringify(sitesToDisplay));
+                    console.log('✅ Sites refreshed and cached:', sitesToDisplay.length);
+                  } else {
+                    sitesToDisplay = defaultPlaces.map((site: any) => ({
+                      ...site,
+                      latitude: (site as any).latitude || 0,
+                      longitude: (site as any).longitude || 0,
+                      created_at: (site as any).created_at || new Date().toISOString(),
+                      updated_at: (site as any).updated_at || new Date().toISOString(),
+                      gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : [])
+                    }));
+                  }
+                  
+                  // Format and display
+                  const formattedSites = sitesToDisplay.map((site: any) => ({
+                    ...site,
+                    distance: site.distance || `${(Math.random() * 100).toFixed(1)} km`,
+                    rating: site.rating || 4.5,
+                    image: site.image || site.image_url || 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=400&h=300&fit=crop',
+                    openingHours: site.openingHours || site.visiting_hours || 'Daily: 6:00 AM - 6:00 PM',
+                    entranceFee: site.entranceFee || site.entry_fee || 'Free entry',
+                    gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : []),
+                    latitude: site.latitude || 0,
+                    longitude: site.longitude || 0,
+                    created_at: site.created_at || new Date().toISOString(),
+                    updated_at: site.updated_at || new Date().toISOString()
+                  }));
+                  
+                  setAllPlaces(formattedSites);
+                  console.log('✅ Refresh complete:', formattedSites.length, 'sites');
+                  
+                  Alert.alert('Success', 'Sites refreshed successfully!');
+                } catch (error) {
+                  console.error('❌ Error refreshing:', error);
+                  Alert.alert('Error', 'Failed to refresh sites. Using cached data.');
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              style={styles.refreshButton}
+            >
+              <Text style={styles.refreshButtonText}>🔄</Text>
+            </TouchableOpacity>
+            <Badge style={styles.headerBadge}>
+              <Text style={styles.headerBadgeText}>{filteredAndSortedPlaces.length} places</Text>
+            </Badge>
+          </View>
         </View>
 
         {/* Search Bar */}
@@ -244,7 +608,6 @@ export function AllPlacesScreen({ user, onNavigateToSite, favoriteSites, visited
           <Text style={styles.searchIcon}>🔍</Text>
           <Input
             placeholder="Search places, locations, or categories..."
-            placeholderTextColor="#A7F3D0" // A light green that complements the teal
             value={searchQuery}
             onChangeText={setSearchQuery}
             style={styles.searchInput}
@@ -310,6 +673,133 @@ export function AllPlacesScreen({ user, onNavigateToSite, favoriteSites, visited
             >
               Clear Filters
             </Button>
+            <Button 
+              onPress={() => {
+                console.log('🔄 Manual refresh from empty state triggered');
+                setLoading(true);
+                // Reload the component by forcing a re-render
+                setAllPlaces([]);
+                setTimeout(() => {
+                  const initializeAndLoadData = async () => {
+                    try {
+                      setLoading(true);
+                      console.log('🏛️ AllPlacesScreen: Starting initialization...');
+                      
+                      // Get current user ID
+                      const userId = await AsyncStorage.getItem('userId') || authService.getCurrentUserId();
+                      setCurrentUserId(userId);
+                      
+                      // Try to load from Firestore directly
+                      let sitesToDisplay = [];
+                      
+                      try {
+                        const { firestore } = await import('../services/firebase');
+                        const { collection, getDocs } = await import('firebase/firestore');
+                        
+                        const sitesCollection = collection(firestore, 'sites');
+                        const sitesSnapshot = await getDocs(sitesCollection);
+                        
+                        if (sitesSnapshot.size > 0) {
+                          const firestoreSites: any[] = [];
+                          sitesSnapshot.forEach((doc) => {
+                            const data = doc.data();
+                            let siteId: number;
+                            if (!isNaN(parseInt(doc.id))) {
+                              siteId = parseInt(doc.id);
+                            } else {
+                              siteId = Math.abs(doc.id.split('').reduce((a, b) => {
+                                a = ((a << 5) - a) + b.charCodeAt(0);
+                                return a & a;
+                              }, 0));
+                            }
+                            
+                            const siteData = {
+                              id: siteId,
+                              name: data.name || '',
+                              description: data.description || '',
+                              location: data.location || '',
+                              latitude: data.coordinates?.latitude || data.latitude || 0,
+                              longitude: data.coordinates?.longitude || data.longitude || 0,
+                              category: data.category || '',
+                              image_url: data.image || data.image_url || '',
+                              district: data.district || '',
+                              distance: data.distance || `${(Math.random() * 100).toFixed(1)} km`,
+                              rating: data.rating || 4.5,
+                              image: data.image || data.image_url || '',
+                              openingHours: data.openingHours || data.visiting_hours || '',
+                              entranceFee: data.entranceFee || data.entry_fee || '',
+                              gallery: data.gallery ? (Array.isArray(data.gallery) ? data.gallery : []) : [],
+                              updated_at: new Date().toISOString()
+                            };
+                            
+                            firestoreSites.push(siteData);
+                          });
+                          
+                          const defaultSitesNotInFirestore = defaultPlaces.filter(
+                            defaultSite => !firestoreSites.some(fSite => 
+                              fSite.name.toLowerCase() === defaultSite.name.toLowerCase()
+                            )
+                          );
+                          
+                          sitesToDisplay = [...firestoreSites, ...defaultSitesNotInFirestore];
+                        } else {
+                          sitesToDisplay = defaultPlaces.map((site: any) => ({
+                            ...site,
+                            latitude: (site as any).latitude || 0,
+                            longitude: (site as any).longitude || 0,
+                            created_at: (site as any).created_at || new Date().toISOString(),
+                            updated_at: (site as any).updated_at || new Date().toISOString(),
+                            gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : [])
+                          }));
+                        }
+                      } catch (firestoreError) {
+                        console.error('❌ Firestore direct fetch failed:', firestoreError);
+                        sitesToDisplay = defaultPlaces.map((site: any) => ({
+                          ...site,
+                          latitude: (site as any).latitude || 0,
+                          longitude: (site as any).longitude || 0,
+                          created_at: (site as any).created_at || new Date().toISOString(),
+                          updated_at: (site as any).updated_at || new Date().toISOString(),
+                          gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : [])
+                        }));
+                      }
+                      
+                      const formattedSites = sitesToDisplay.map((site: any) => ({
+                        ...site,
+                        distance: site.distance || `${(Math.random() * 100).toFixed(1)} km`,
+                        rating: site.rating || 4.5,
+                        image: site.image || site.image_url || 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=400&h=300&fit=crop',
+                        openingHours: site.openingHours || site.visiting_hours || 'Daily: 6:00 AM - 6:00 PM',
+                        entranceFee: site.entranceFee || site.entry_fee || 'Free entry',
+                        gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : []),
+                        latitude: site.latitude || 0,
+                        longitude: site.longitude || 0,
+                        created_at: site.created_at || new Date().toISOString(),
+                        updated_at: site.updated_at || new Date().toISOString()
+                      }));
+                      
+                      setAllPlaces(formattedSites);
+                    } catch (error) {
+                      console.error('❌ Error initializing AllPlacesScreen:', error);
+                      setAllPlaces(defaultPlaces.map((site: any) => ({
+                        ...site,
+                        latitude: (site as any).latitude || 0,
+                        longitude: (site as any).longitude || 0,
+                        created_at: (site as any).created_at || new Date().toISOString(),
+                        updated_at: (site as any).updated_at || new Date().toISOString(),
+                        gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : [])
+                      })));
+                    } finally {
+                      setLoading(false);
+                    }
+                  };
+                  initializeAndLoadData();
+                }, 100);
+              }}
+              style={styles.clearButton}
+            >
+              🔄 Refresh Data
+            </Button>
           </View>
         ) : (
           <FlatList
@@ -347,6 +837,11 @@ export function AllPlacesScreen({ user, onNavigateToSite, favoriteSites, visited
                               <Text style={styles.badgeIcon}>❤️</Text>
                             </View>
                           )}
+                          {place.updated_at && place.updated_at.includes('17:47:20') && (
+                            <View style={[styles.badge, styles.firestoreBadge]}>
+                              <Text style={styles.badgeIcon}>🔥</Text>
+                            </View>
+                          )}
                         </View>
                         
                         <View style={styles.siteInfo}>
@@ -365,7 +860,31 @@ export function AllPlacesScreen({ user, onNavigateToSite, favoriteSites, visited
                         <TouchableOpacity
                           onPress={(e) => {
                             e.stopPropagation();
-                            onNavigateToSite(place);
+                            handleToggleFavorite(place.id);
+                          }}
+                          style={[styles.actionButton, isFavorite && styles.favoriteActiveButton]}
+                        >
+                          <Text style={[styles.actionButtonText, isFavorite && styles.favoriteActiveText]}>
+                            {isFavorite ? '❤️ Favorited' : '🤍 Favorite'}
+                          </Text>
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            handleToggleVisited(place.id);
+                          }}
+                          style={[styles.actionButton, isVisited && styles.visitedActiveButton]}
+                        >
+                          <Text style={[styles.actionButtonText, isVisited && styles.visitedActiveText]}>
+                            {isVisited ? '👁️ Visited' : '📍 Mark Visited'}
+                          </Text>
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            onNavigateToSite({ ...place, id: place.id.toString() });
                           }}
                           style={styles.detailsButton}
                         >
@@ -388,6 +907,30 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB', // gray-50
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingContent: {
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  loadingText: {
+    fontSize: 48,
+    marginBottom: 16,
+  },
+  loadingTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  loadingSubtitle: {
+    fontSize: 16,
+    color: '#6B7280',
+    textAlign: 'center',
   },
   header: {
     backgroundColor: '#0D9488', // A vibrant teal color
@@ -413,6 +956,33 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     fontSize: 14,
     color: '#CCFBF1', // A light teal for the subtitle
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  refreshButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  resetButton: {
+    backgroundColor: 'rgba(255, 50, 50, 0.4)',
+    borderColor: 'rgba(255, 50, 50, 0.6)',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  refreshButtonText: {
+    fontSize: 16,
+    color: '#FFFFFF',
   },
   headerBadge: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
@@ -571,6 +1141,11 @@ const styles = StyleSheet.create({
     right: 4,
     backgroundColor: '#EF4444',
   },
+  firestoreBadge: {
+    top: 4,
+    left: 4,
+    backgroundColor: '#F97316',
+  },
   badgeIcon: {
     fontSize: 12,
   },
@@ -611,21 +1186,54 @@ const styles = StyleSheet.create({
   },
   siteActions: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     marginTop: 12,
     borderTopWidth: 1,
     borderTopColor: '#F3F4F6',
     paddingTop: 16,
+    gap: 8,
+  },
+  actionButton: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  actionButtonText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#374151',
+  },
+  favoriteActiveButton: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#F87171',
+  },
+  favoriteActiveText: {
+    color: '#DC2626',
+  },
+  visitedActiveButton: {
+    backgroundColor: '#D1FAE5',
+    borderColor: '#10B981',
+  },
+  visitedActiveText: {
+    color: '#065F46',
   },
   detailsButton: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 6,
     alignItems: 'center',
     backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
   },
   detailsButtonText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
     color: '#92400E',
   },

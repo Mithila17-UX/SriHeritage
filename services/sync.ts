@@ -15,7 +15,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { firestore } from './firebase';
 import { authService } from './auth';
-import { databaseService } from './database';
+import { databaseService, Site } from './database';
 
 export interface ForumPost {
   id?: string;
@@ -162,6 +162,136 @@ class SyncService {
     }
   }
 
+  // Sync sites from Firestore to local SQLite
+  async syncSitesFromFirestore(): Promise<void> {
+    if (!await this.checkConnectivity()) {
+      console.log('🔌 Offline - skipping sites sync from Firestore');
+      return;
+    }
+
+    try {
+      console.log('🔄 Starting Firestore sites sync...');
+      console.log('🔥 Firestore instance:', firestore);
+      console.log('📡 Attempting to query collection: "sites"');
+      
+      const sitesCollection = collection(firestore, 'sites');
+      console.log('📂 Collection reference created:', sitesCollection);
+      
+      const sitesSnapshot = await getDocs(sitesCollection);
+      console.log('📊 Firestore query completed');
+      console.log('📊 Firestore query result:', sitesSnapshot.size, 'documents');
+      console.log('📊 Snapshot empty?', sitesSnapshot.empty);
+      console.log('📊 Snapshot metadata:', sitesSnapshot.metadata);
+      
+      const firestoreSites: any[] = [];
+      sitesSnapshot.forEach((doc) => {
+        const data = doc.data();
+        console.log('📄 Processing Firestore document:', doc.id, data);
+        
+        // Handle ID more robustly
+        let siteId: number;
+        if (!isNaN(parseInt(doc.id))) {
+          siteId = parseInt(doc.id);
+        } else {
+          // If doc.id is not a number, generate a hash-based ID
+          siteId = Math.abs(doc.id.split('').reduce((a, b) => {
+            a = ((a << 5) - a) + b.charCodeAt(0);
+            return a & a;
+          }, 0));
+        }
+        
+        const siteData = {
+          id: siteId,
+          name: data.name || '',
+          description: data.description || '',
+          location: data.location || '',
+          latitude: data.coordinates?.latitude || data.latitude || 0,
+          longitude: data.coordinates?.longitude || data.longitude || 0,
+          category: data.category || '',
+          image_url: data.image || data.image_url || '',
+          historical_period: data.historical_period || '',
+          significance: data.significance || '',
+          visiting_hours: data.openingHours || data.visiting_hours || '',
+          entry_fee: data.entranceFee || data.entry_fee || '',
+          // Admin panel compatibility fields
+          district: data.district || '',
+          distance: data.distance || '',
+          rating: data.rating || 4.5,
+          image: data.image || data.image_url || '',
+          openingHours: data.openingHours || data.visiting_hours || '',
+          entranceFee: data.entranceFee || data.entry_fee || '',
+          gallery: data.gallery ? JSON.stringify(data.gallery) : '[]',
+          coordinates: {
+            latitude: data.coordinates?.latitude || data.latitude || 0,
+            longitude: data.coordinates?.longitude || data.longitude || 0
+          }
+        };
+        
+        console.log('✅ Processed site data:', siteData);
+        firestoreSites.push(siteData);
+      });
+
+      console.log('📊 Total sites to sync:', firestoreSites.length);
+
+      // Update local SQLite database
+      for (const site of firestoreSites) {
+        console.log('💾 Inserting/updating site in SQLite:', site.id, site.name);
+        await databaseService.insertOrUpdateSite(site);
+      }
+
+      // Remove any duplicates that might have been created
+      await databaseService.removeDuplicateSites();
+
+      await AsyncStorage.setItem('sitesLastSynced', new Date().toISOString());
+      console.log(`✅ Sites synced from Firestore: ${firestoreSites.length} sites`);
+    } catch (error) {
+      console.error('❌ Failed to sync sites from Firestore:', error);
+      throw error;
+    }
+  }
+
+  // Get all sites with sync priority (Firestore first, then SQLite fallback)
+  async getAllSitesWithSync(): Promise<Site[]> {
+    try {
+      console.log('🔄 getAllSitesWithSync: Starting...');
+      
+      // Try to sync from Firestore first if online
+      const isOnline = await this.checkConnectivity();
+      console.log('🌐 Connectivity check:', isOnline);
+      
+      if (isOnline) {
+        try {
+          console.log('🔄 Attempting Firestore sync...');
+          await this.syncSitesFromFirestore();
+          console.log('✅ Firestore sync completed');
+        } catch (syncError) {
+          console.warn('⚠️ Sites sync failed, using local data:', syncError);
+        }
+      } else {
+        console.log('🔌 Offline - skipping Firestore sync');
+      }
+
+      // Always return from local SQLite (which now has the latest data if sync succeeded)
+      console.log('📊 Getting sites from local SQLite...');
+      const sites = await databaseService.getAllSites();
+      console.log('📊 SQLite returned:', sites.length, 'sites');
+      
+      return sites;
+    } catch (error) {
+      console.error('❌ Failed to get sites with sync:', error);
+      // Fallback to local data only
+      console.log('🔄 Fallback: Getting sites from SQLite only...');
+      try {
+        const fallbackSites = await databaseService.getAllSites();
+        console.log('📊 Fallback SQLite returned:', fallbackSites.length, 'sites');
+        return fallbackSites;
+      } catch (fallbackError) {
+        console.error('❌ Even fallback failed:', fallbackError);
+        return [];
+      }
+    }
+  }
+
   // Full sync - both directions
   async performFullSync(): Promise<void> {
     if (this.syncInProgress) {
@@ -183,6 +313,9 @@ class SyncService {
     this.syncInProgress = true;
 
     try {
+      // Sync sites first
+      await this.syncSitesFromFirestore();
+
       // First sync from Firestore to local (in case user logged in from another device)
       await this.syncFavoritesFromFirestore(userId);
       await this.syncVisitedFromFirestore(userId);

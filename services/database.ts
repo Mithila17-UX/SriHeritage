@@ -54,24 +54,96 @@ class DatabaseService {
     if (this.isInitialized) return;
 
     try {
+      console.log('🔧 Initializing database...');
+      
+      // Close any existing connection
+      if (this.db) {
+        try {
+          await this.db.closeAsync();
+        } catch (closeError) {
+          console.warn('Error closing existing database:', closeError);
+        }
+        this.db = null;
+      }
+      
       // Open database
       this.db = await SQLite.openDatabaseAsync('sriheritage.db');
+      console.log('✅ Database connection opened');
+      
+      // Test the connection with a simple query
+      try {
+        await this.db.getFirstAsync('SELECT 1 as test');
+        console.log('✅ Database connection test passed');
+      } catch (testError) {
+        console.error('❌ Database connection test failed, attempting recovery...');
+        await this.resetDatabase();
+        return;
+      }
       
       // Create tables
       await this.createTables();
+      console.log('✅ Tables created/verified');
       
-      // Check if we need to seed data
-      const hasSeededData = await AsyncStorage.getItem('database_seeded');
-      if (!hasSeededData) {
-        await this.seedSitesData();
-        await AsyncStorage.setItem('database_seeded', 'true');
+      // Check if we need to seed data (only if no sites exist)
+      try {
+        const existingSites = await this.getAllSites();
+        console.log('📊 Existing sites found:', existingSites.length);
+        
+        if (existingSites.length === 0) {
+          const hasSeededData = await AsyncStorage.getItem('database_seeded');
+          if (!hasSeededData) {
+            console.log('🌱 Seeding database with initial data...');
+            await this.seedSitesData();
+            await AsyncStorage.setItem('database_seeded', 'true');
+            console.log('✅ Database seeded successfully');
+          }
+        }
+      } catch (seedError) {
+        console.error('❌ Error during seeding, attempting recovery:', seedError);
+        await this.resetDatabase();
+        return;
       }
       
       this.isInitialized = true;
-      console.log('Database initialized successfully');
+      console.log('✅ Database initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize database:', error);
-      throw error;
+      console.error('❌ Failed to initialize database:', error);
+      console.log('🔄 Attempting database reset...');
+      await this.resetDatabase();
+    }
+  }
+
+  async resetDatabase(): Promise<void> {
+    try {
+      console.log('🔄 Resetting database...');
+      
+      // Close existing connection
+      if (this.db) {
+        try {
+          await this.db.closeAsync();
+        } catch (closeError) {
+          console.warn('Error closing database during reset:', closeError);
+        }
+        this.db = null;
+      }
+      
+      // Delete the database file by opening with a new name and recreating
+      this.db = await SQLite.openDatabaseAsync('sriheritage_new.db');
+      console.log('✅ New database created');
+      
+      // Create tables
+      await this.createTables();
+      console.log('✅ Tables recreated');
+      
+      // Seed with initial data
+      await this.seedSitesData();
+      await AsyncStorage.setItem('database_seeded', 'true');
+      console.log('✅ Database reset and seeded successfully');
+      
+      this.isInitialized = true;
+    } catch (resetError) {
+      console.error('❌ Failed to reset database:', resetError);
+      throw resetError;
     }
   }
 
@@ -231,26 +303,54 @@ class DatabaseService {
 
   // Sites operations
   async getAllSites(): Promise<Site[]> {
-    if (!this.db) throw new Error('Database not initialized');
+    if (!this.db) {
+      console.error('Database not initialized in getAllSites');
+      return [];
+    }
     
     try {
       const result = await this.db.getAllAsync('SELECT * FROM sites ORDER BY name ASC');
       return result as Site[];
     } catch (error) {
       console.error('Failed to get all sites:', error);
-      throw error;
+      console.log('🔄 Attempting to reinitialize database...');
+      
+      // Try to reinitialize the database
+      this.isInitialized = false;
+      try {
+        await this.initializeDatabase();
+        const retryResult = await this.db!.getAllAsync('SELECT * FROM sites ORDER BY name ASC');
+        return retryResult as Site[];
+      } catch (retryError) {
+        console.error('Failed to get sites after reinitialize:', retryError);
+        return [];
+      }
     }
   }
 
   async getSiteById(id: number): Promise<Site | null> {
-    if (!this.db) throw new Error('Database not initialized');
+    if (!this.db) {
+      console.error('Database not initialized in getSiteById');
+      return null;
+    }
     
     try {
       const result = await this.db.getFirstAsync('SELECT * FROM sites WHERE id = ?', [id]);
       return result as Site | null;
     } catch (error) {
       console.error('Failed to get site by id:', error);
-      throw error;
+      console.log('🔄 Attempting to reinitialize database for getSiteById...');
+      
+      // Try to reinitialize the database
+      this.isInitialized = false;
+      try {
+        await this.initializeDatabase();
+        const retryResult = await this.db!.getFirstAsync('SELECT * FROM sites WHERE id = ?', [id]);
+        return retryResult as Site | null;
+      } catch (retryError) {
+        console.error('Failed to get site by id after reinitialize:', retryError);
+        return null;
+      }
     }
   }
 
@@ -476,48 +576,69 @@ class DatabaseService {
     }
   }
 
+  // Remove all duplicates and keep only unique sites by name
+  async removeDuplicateSites(): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+    
+    try {
+      await this.db.runAsync(`
+        DELETE FROM sites 
+        WHERE id NOT IN (
+          SELECT MIN(id) 
+          FROM sites 
+          GROUP BY name, location
+        )
+      `);
+      console.log('✅ Removed duplicate sites');
+    } catch (error) {
+      console.error('Failed to remove duplicate sites:', error);
+      throw error;
+    }
+  }
+
   // Admin panel specific methods
   async insertOrUpdateSite(site: Partial<Site> & { id: number }): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
     
     try {
-      // Check if site exists
+      // Check if site exists by ID first (this is the primary key from Firestore)
       const existingSite = await this.getSiteById(site.id);
       
       if (existingSite) {
-        // Update existing site
+        // Update existing site by ID
         await this.db.runAsync(
           `UPDATE sites SET 
-            name = COALESCE(?, name),
-            description = COALESCE(?, description),
-            location = COALESCE(?, location),
-            latitude = COALESCE(?, latitude),
-            longitude = COALESCE(?, longitude),
-            category = COALESCE(?, category),
-            image_url = COALESCE(?, image_url),
-            historical_period = COALESCE(?, historical_period),
-            significance = COALESCE(?, significance),
-            visiting_hours = COALESCE(?, visiting_hours),
-            entry_fee = COALESCE(?, entry_fee),
+            name = ?,
+            description = ?,
+            location = ?,
+            latitude = ?,
+            longitude = ?,
+            category = ?,
+            image_url = ?,
+            historical_period = ?,
+            significance = ?,
+            visiting_hours = ?,
+            entry_fee = ?,
             updated_at = datetime('now')
           WHERE id = ?`,
           [
-            site.name,
-            site.description,
-            site.location,
-            site.coordinates?.latitude || site.latitude,
-            site.coordinates?.longitude || site.longitude,
-            site.category,
-            site.image || site.image_url,
-            site.historical_period,
-            site.significance,
-            site.openingHours || site.visiting_hours,
-            site.entranceFee || site.entry_fee,
+            site.name || '',
+            site.description || '',
+            site.location || '',
+            site.coordinates?.latitude || site.latitude || 0,
+            site.coordinates?.longitude || site.longitude || 0,
+            site.category || '',
+            site.image || site.image_url || '',
+            site.historical_period || '',
+            site.significance || '',
+            site.openingHours || site.visiting_hours || '',
+            site.entranceFee || site.entry_fee || '',
             site.id
           ]
         );
+        console.log('✅ Updated site by ID:', site.id, site.name);
       } else {
-        // Insert new site
+        // Insert new site with the Firestore-generated ID
         await this.db.runAsync(
           `INSERT INTO sites (
             id, name, description, location, latitude, longitude, category,
@@ -539,6 +660,7 @@ class DatabaseService {
             site.entranceFee || site.entry_fee || ''
           ]
         );
+        console.log('✅ Inserted new site from Firestore:', site.id, site.name);
       }
     } catch (error) {
       console.error('Failed to insert or update site:', error);
