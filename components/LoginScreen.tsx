@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Card, CardContent, CardHeader } from './ui/card';
 
 interface LoginScreenProps {
-  onLogin: (email: string, password: string) => void;
+  onLogin: (email: string, password: string) => Promise<void>;
   onNavigateToSignup: () => void;
   onNavigateToForgotPassword: () => void;
 }
@@ -15,10 +15,24 @@ export function LoginScreen({ onLogin, onNavigateToSignup, onNavigateToForgotPas
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = () => {
-    if (email && password) {
-      onLogin(email, password);
+  const handleSubmit = async () => {
+    if (!email || !password) {
+      setError('Please enter both email and password');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      await onLogin(email, password);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -86,11 +100,25 @@ export function LoginScreen({ onLogin, onNavigateToSignup, onNavigateToForgotPas
               </TouchableOpacity>
             </View>
             
+            {error && (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            )}
+            
             <Button
               onPress={handleSubmit}
-              style={styles.loginButton}
+              style={isLoading ? {...styles.loginButton, ...styles.loginButtonDisabled} : styles.loginButton}
+              disabled={isLoading}
             >
-              Login
+              {isLoading ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <Text style={[styles.loginButtonText, { marginLeft: 8 }]}>Signing In...</Text>
+                </View>
+              ) : (
+                <Text style={styles.loginButtonText}>Login</Text>
+              )}
             </Button>
           </View>
           
@@ -241,9 +269,35 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#0EA5E9', // A vibrant sky blue for links
   },
+  errorContainer: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#FECACA',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  errorText: {
+    color: '#DC2626',
+    fontSize: 14,
+    textAlign: 'center',
+  },
   loginButton: {
     backgroundColor: '#0EA5E9', // A vibrant sky blue for the main button
     width: '100%',
+  },
+  loginButtonDisabled: {
+    backgroundColor: '#94A3B8',
+  },
+  loginButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   signupContainer: {
     flexDirection: 'row',

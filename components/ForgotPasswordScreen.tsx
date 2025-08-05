@@ -9,9 +9,10 @@ import { Card, CardContent, CardHeader } from './ui/card';
 
 interface ForgotPasswordScreenProps {
   onBackToLogin: () => void;
+  onForgotPassword: (email: string) => Promise<void>;
 }
 
-export function ForgotPasswordScreen({ onBackToLogin }: ForgotPasswordScreenProps) {
+export function ForgotPasswordScreen({ onBackToLogin, onForgotPassword }: ForgotPasswordScreenProps) {
   const [email, setEmail] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -19,10 +20,15 @@ export function ForgotPasswordScreen({ onBackToLogin }: ForgotPasswordScreenProp
   const handleSubmit = async () => {
     if (email) {
       setIsLoading(true);
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      setIsLoading(false);
-      setIsSubmitted(true);
+      try {
+        await onForgotPassword(email);
+        setIsSubmitted(true);
+      } catch (error) {
+        console.error('Failed to send password reset email:', error);
+        // You can add error handling here (show error message to user)
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
