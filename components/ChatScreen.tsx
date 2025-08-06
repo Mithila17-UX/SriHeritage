@@ -1,15 +1,31 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from 'react-native';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Card, CardContent } from './ui/card';
 import { useChat, ChatMessageUI } from '../hooks/useChat';
 import { FormattedText } from '../utils/textFormatter';
+import { ChatHistoryModal } from './ChatHistoryModal';
 
 export function ChatScreen() {
-  const { messages, isLoading, error, sendMessage, initializeChat } = useChat();
+  const { 
+    messages, 
+    isLoading, 
+    error, 
+    sendMessage, 
+    initializeChat,
+    createNewChat,
+    loadChatSessions,
+    loadChatSession,
+    deleteChatSession,
+    clearChatHistory,
+    chatSessions,
+    currentSessionId
+  } = useChat('default_user'); // You can replace with actual user ID
+  
   const [inputText, setInputText] = useState('');
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
@@ -78,6 +94,37 @@ export function ChatScreen() {
     }, 300);
   };
 
+  const handleNewChat = async () => {
+    await createNewChat();
+  };
+
+  const handleClearChat = () => {
+    Alert.alert(
+      'Clear Chat',
+      'Are you sure you want to clear this chat? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Clear', style: 'destructive', onPress: clearChatHistory }
+      ]
+    );
+  };
+
+  const handleSelectSession = async (sessionId: string) => {
+    await loadChatSession(sessionId);
+    setShowHistoryModal(false);
+  };
+
+  const handleDeleteSession = (sessionId: string) => {
+    Alert.alert(
+      'Delete Chat',
+      'Are you sure you want to delete this chat? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => deleteChatSession(sessionId) }
+      ]
+    );
+  };
+
   return (
     <KeyboardAvoidingView 
       style={styles.container} 
@@ -90,8 +137,16 @@ export function ChatScreen() {
             <Text style={styles.headerTitle}>AI Heritage Guide</Text>
             <Text style={styles.headerSubtitle}>Your personal tour assistant</Text>
           </View>
-          <View style={styles.botAvatar}>
-            <Text style={styles.botIcon}>🤖</Text>
+          <View style={styles.headerActions}>
+            <TouchableOpacity onPress={() => setShowHistoryModal(true)} style={styles.headerButton}>
+              <Text style={styles.headerButtonText}>📋</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleNewChat} style={styles.headerButton}>
+              <Text style={styles.headerButtonText}>➕</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleClearChat} style={styles.headerButton}>
+              <Text style={styles.headerButtonText}>🗑️</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </View>
@@ -201,6 +256,16 @@ export function ChatScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Chat History Modal */}
+      <ChatHistoryModal
+        visible={showHistoryModal}
+        onClose={() => setShowHistoryModal(false)}
+        chatSessions={chatSessions}
+        onSelectSession={handleSelectSession}
+        onDeleteSession={handleDeleteSession}
+        currentSessionId={currentSessionId}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -221,16 +286,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  botAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  botIcon: {
-    fontSize: 24,
+  headerButtonText: {
+    fontSize: 18,
+    color: '#FFFFFF',
   },
   headerText: {
     flex: 1,

@@ -1,6 +1,7 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { chatService, ChatMessage } from '../services/chatService';
 import { copyApiKeyFile } from '../services/fileUtils';
+import { chatHistoryService, ChatSession, ChatSessionSummary } from '../services/chatHistoryService';
 
 export interface ChatMessageUI {
   id: string;
@@ -10,7 +11,7 @@ export interface ChatMessageUI {
   isLoading?: boolean;
 }
 
-export function useChat() {
+export function useChat(userId: string = 'default_user') {
   const [messages, setMessages] = useState<ChatMessageUI[]>([
     {
       id: '1',
@@ -66,6 +67,8 @@ What aspect of Sri Lankan heritage would you like to explore? I'm here to provid
   
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [chatSessions, setChatSessions] = useState<ChatSessionSummary[]>([]);
   const conversationHistory = useRef<ChatMessage[]>([]);
   const isInitialized = useRef(false);
 
@@ -84,6 +87,16 @@ What aspect of Sri Lankan heritage would you like to explore? I'm here to provid
 
   const sendMessage = useCallback(async (userMessage: string) => {
     if (!userMessage.trim()) return;
+
+    // Create a new session if one doesn't exist
+    if (!currentSessionId) {
+      try {
+        const sessionId = await chatHistoryService.createChatSession(userId);
+        setCurrentSessionId(sessionId);
+      } catch (error) {
+        console.error('Failed to create chat session:', error);
+      }
+    }
 
     // Add user message to UI
     const userMessageUI: ChatMessageUI = {
@@ -132,6 +145,14 @@ What aspect of Sri Lankan heritage would you like to explore? I'm here to provid
       };
       conversationHistory.current.push(aiChatMessage);
 
+      // Update session title based on first user message
+      if (conversationHistory.current.length === 2) { // First user message + AI response
+        const title = chatHistoryService.generateSessionTitle(conversationHistory.current);
+        if (currentSessionId) {
+          await chatHistoryService.updateSessionTitle(currentSessionId, title);
+        }
+      }
+
       // Update UI with AI response
       setMessages(prev => prev.map(msg => 
         msg.isLoading 
@@ -160,7 +181,7 @@ What aspect of Sri Lankan heritage would you like to explore? I'm here to provid
     } finally {
       setIsLoading(false);
     }
-  }, [initializeChat]);
+  }, [initializeChat, currentSessionId, userId]);
 
   const clearChat = useCallback(() => {
     setMessages([
@@ -219,12 +240,117 @@ What aspect of Sri Lankan heritage would you like to explore? I'm here to provid
     setError(null);
   }, []);
 
+  // Chat history management functions
+  const createNewChat = useCallback(async () => {
+    try {
+      const sessionId = await chatHistoryService.createChatSession(userId);
+      setCurrentSessionId(sessionId);
+      clearChat();
+      await loadChatSessions();
+      console.log('✅ Created new chat session:', sessionId);
+    } catch (error) {
+      console.error('❌ Failed to create new chat:', error);
+      setError('Failed to create new chat');
+    }
+  }, [userId, clearChat]);
+
+  const loadChatSessions = useCallback(async () => {
+    try {
+      const sessions = await chatHistoryService.getUserChatSessions(userId);
+      setChatSessions(sessions);
+    } catch (error) {
+      console.error('❌ Failed to load chat sessions:', error);
+      // Set empty array to prevent UI issues
+      setChatSessions([]);
+    }
+  }, [userId]);
+
+  const loadChatSession = useCallback(async (sessionId: string) => {
+    try {
+      const session = await chatHistoryService.loadChatSession(sessionId);
+      if (session) {
+        setCurrentSessionId(sessionId);
+        // Convert ChatMessage[] to ChatMessageUI[]
+        const uiMessages: ChatMessageUI[] = session.messages.map((msg, index) => ({
+          id: `${sessionId}_${index}`,
+          text: msg.content,
+          sender: msg.role === 'user' ? 'user' : 'bot',
+          timestamp: msg.role === 'user' ? new Date() : new Date(), // You might want to store actual timestamps
+        }));
+        setMessages(uiMessages);
+        conversationHistory.current = session.messages;
+        await loadChatSessions();
+      }
+    } catch (error) {
+      console.error('❌ Failed to load chat session:', error);
+      setError('Failed to load chat session');
+    }
+  }, []);
+
+  const deleteChatSession = useCallback(async (sessionId: string) => {
+    try {
+      await chatHistoryService.deleteChatSession(sessionId);
+      if (currentSessionId === sessionId) {
+        await createNewChat();
+      } else {
+        await loadChatSessions();
+      }
+    } catch (error) {
+      console.error('❌ Failed to delete chat session:', error);
+      setError('Failed to delete chat session');
+    }
+  }, [currentSessionId, createNewChat, loadChatSessions]);
+
+  const clearChatHistory = useCallback(async () => {
+    if (currentSessionId) {
+      try {
+        await chatHistoryService.clearChatSession(currentSessionId);
+        clearChat();
+      } catch (error) {
+        console.error('❌ Failed to clear chat history:', error);
+        setError('Failed to clear chat history');
+      }
+    }
+  }, [currentSessionId, clearChat]);
+
+  // Save chat messages periodically
+  const saveChatMessages = useCallback(async () => {
+    if (currentSessionId && conversationHistory.current.length > 0) {
+      try {
+        await chatHistoryService.saveChatMessages(currentSessionId, conversationHistory.current);
+      } catch (error) {
+        console.error('❌ Failed to save chat messages:', error);
+      }
+    }
+  }, [currentSessionId]);
+
+  // Auto-save chat messages when they change
+  useEffect(() => {
+    if (conversationHistory.current.length > 0) {
+      const timeoutId = setTimeout(saveChatMessages, 2000); // Save after 2 seconds of inactivity
+      return () => clearTimeout(timeoutId);
+    }
+  }, [conversationHistory.current.length, saveChatMessages]);
+
+  // Load chat sessions on mount
+  useEffect(() => {
+    loadChatSessions();
+  }, [loadChatSessions]);
+
   return {
     messages,
     isLoading,
     error,
     sendMessage,
     clearChat,
-    initializeChat
+    initializeChat,
+    // Chat history functions
+    createNewChat,
+    loadChatSessions,
+    loadChatSession,
+    deleteChatSession,
+    clearChatHistory,
+    chatSessions,
+    currentSessionId
   };
 } 
