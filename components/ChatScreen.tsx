@@ -1,69 +1,81 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Card, CardContent } from './ui/card';
-// Note: Avatar component would need to be converted to React Native
-// import { Avatar, AvatarFallback } from './ui/avatar';
-// import { Send, Bot, User } from 'lucide-react';
-
-interface Message {
-  id: number;
-  text: string;
-  sender: 'user' | 'bot';
-  timestamp: Date;
-}
-
-const initialMessages: Message[] = [
-  {
-    id: 1,
-    text: "Hello! I'm your Sri Lankan heritage guide. I can help you learn about our rich cultural history, ancient temples, colonial architecture, and traditional arts. What would you like to know?",
-    sender: 'bot',
-    timestamp: new Date()
-  }
-];
-
-const botResponses = [
-  "The Temple of the Sacred Tooth Relic in Kandy is one of Sri Lanka's most sacred Buddhist sites. It houses a tooth relic of the Buddha and is a UNESCO World Heritage Site.",
-  "Sigiriya, also known as Lion Rock, is an ancient rock fortress built in the 5th century. It features beautiful frescoes and sophisticated water gardens.",
-  "Sri Lankan traditional dance includes Kandyan, Sabaragamuwa, and low country styles. Each has unique costumes, music, and cultural significance.",
-  "The ancient cities of Anuradhapura and Polonnaruwa showcase Sri Lanka's Buddhist heritage with magnificent stupas, monasteries, and irrigation systems.",
-  "Sri Lankan cuisine blends spices like cinnamon, cardamom, and cloves with rice, coconut, and fresh seafood, reflecting centuries of cultural exchange."
-];
+import { useChat, ChatMessageUI } from '../hooks/useChat';
+import { FormattedText } from '../utils/textFormatter';
 
 export function ChatScreen() {
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
+  const { messages, isLoading, error, sendMessage, initializeChat } = useChat();
   const [inputText, setInputText] = useState('');
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
 
-  const handleSendMessage = () => {
-    if (!inputText.trim()) return;
+  useEffect(() => {
+    initializeChat();
+  }, [initializeChat]);
 
-    const userMessage: Message = {
-      id: messages.length + 1,
-      text: inputText,
-      sender: 'user',
-      timestamp: new Date()
-    };
+  useEffect(() => {
+    // Auto-scroll to show the beginning of the latest bot message
+    if (scrollViewRef.current && messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.sender === 'bot' && !lastMessage.isLoading) {
+        // For long messages, scroll to show the beginning
+        // For short messages, scroll to the end
+        const isLongMessage = lastMessage.text.length > 200;
+        setTimeout(() => {
+          if (isLongMessage) {
+            // For long messages, scroll to show the beginning of the response
+            // We'll scroll to the end but the scroll button will help users navigate
+            scrollViewRef.current?.scrollToEnd({ animated: true });
+          } else {
+            // For short messages, scroll to the end
+            scrollViewRef.current?.scrollToEnd({ animated: true });
+          }
+        }, 100);
+      }
+    }
+  }, [messages]);
 
-    setMessages(prev => [...prev, userMessage]);
+  const handleSendMessage = async () => {
+    if (!inputText.trim() || isLoading) return;
+
+    const messageToSend = inputText.trim();
     setInputText('');
-
-    // Simulate bot response
-    setTimeout(() => {
-      const botMessage: Message = {
-        id: messages.length + 2,
-        text: botResponses[Math.floor(Math.random() * botResponses.length)],
-        sender: 'bot',
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, botMessage]);
-    }, 1000);
+    await sendMessage(messageToSend);
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleSendMessage();
+  const handleScroll = (event: any) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const paddingToBottom = 20;
+    const isCloseToBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - paddingToBottom;
+    setShowScrollButton(!isCloseToBottom);
+  };
+
+  // Check if the latest bot message is long enough to warrant a scroll button
+  useEffect(() => {
+    if (messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.sender === 'bot' && !lastMessage.isLoading) {
+        // If the message is longer than 200 characters, it's likely a long response
+        const isLongMessage = lastMessage.text.length > 200;
+        if (isLongMessage) {
+          // Show scroll button after a short delay to let the message render
+          setTimeout(() => {
+            setShowScrollButton(true);
+          }, 500);
+        }
+      }
     }
+  }, [messages]);
+
+  const scrollToBottom = () => {
+    scrollViewRef.current?.scrollToEnd({ animated: true });
+    // Hide the button after scrolling to bottom
+    setTimeout(() => {
+      setShowScrollButton(false);
+    }, 300);
   };
 
   return (
@@ -85,7 +97,14 @@ export function ChatScreen() {
       </View>
 
       {/* Messages */}
-      <ScrollView style={styles.messagesContainer} contentContainerStyle={styles.messagesContent}>
+      <ScrollView 
+        ref={scrollViewRef}
+        style={styles.messagesContainer} 
+        contentContainerStyle={styles.messagesContent}
+        showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+      >
         {messages.map((message) => (
           <View
             key={message.id}
@@ -107,45 +126,78 @@ export function ChatScreen() {
               <Card style={[
                 styles.messageBubble,
                 message.sender === 'user' ? styles.userMessage : styles.botMessage
-              ]}>
+              ] as any}>
                 <CardContent style={styles.messageContent}>
-                  <Text style={[
-                    styles.messageText,
-                    message.sender === 'user' ? styles.userMessageText : styles.botMessageText
-                  ]}>
-                    {message.text}
-                  </Text>
-                  <Text style={[
-                    styles.messageTime,
-                    message.sender === 'user' ? styles.userMessageTime : styles.botMessageTime
-                  ]}>
-                    {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </Text>
+                  {message.isLoading ? (
+                    <View style={styles.loadingContainer}>
+                      <ActivityIndicator size="small" color="#1E3A8A" />
+                      <Text style={[styles.messageText, styles.botMessageText, styles.loadingText]}>
+                        Thinking...
+                      </Text>
+                    </View>
+                  ) : (
+                    <>
+                      <FormattedText 
+                        text={message.text}
+                        style={[
+                          styles.messageText,
+                          message.sender === 'user' ? styles.userMessageText : styles.botMessageText
+                        ]}
+                      />
+                      <Text style={[
+                        styles.messageTime,
+                        message.sender === 'user' ? styles.userMessageTime : styles.botMessageTime
+                      ]}>
+                        {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </Text>
+                    </>
+                  )}
                 </CardContent>
               </Card>
             </View>
           </View>
         ))}
+        
+        {error && (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        )}
       </ScrollView>
+
+      {/* Scroll to Bottom Button */}
+      {showScrollButton && (
+        <TouchableOpacity
+          style={styles.scrollToBottomButton}
+          onPress={scrollToBottom}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.scrollToBottomIcon}>↓</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Input */}
       <View style={styles.inputContainer}>
         <View style={styles.inputWrapper}>
-          <Input
-            value={inputText}
-            onChangeText={setInputText}
-            placeholder="Ask about Sri Lankan heritage..."
-            style={styles.textInput}
-          />
+                      <Input
+              value={inputText}
+              onChangeText={setInputText}
+              placeholder="Ask about Sri Lankan heritage..."
+              style={[styles.textInput, isLoading && styles.inputDisabled] as any}
+            />
           <TouchableOpacity
             onPress={handleSendMessage}
-            disabled={!inputText.trim()}
+            disabled={!inputText.trim() || isLoading}
             style={[
               styles.sendButton,
-              !inputText.trim() && styles.sendButtonDisabled
+              (!inputText.trim() || isLoading) && styles.sendButtonDisabled
             ]}
           >
-            <Text style={styles.sendIcon}>➤</Text>
+            {isLoading ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.sendIcon}>➤</Text>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -241,6 +293,8 @@ const styles = StyleSheet.create({
   },
   botMessage: {
     backgroundColor: '#FFFFFF',
+    borderLeftWidth: 3,
+    borderLeftColor: '#1E3A8A',
   },
   messageContent: {
     paddingVertical: 12,
@@ -248,13 +302,13 @@ const styles = StyleSheet.create({
   },
   messageText: {
     fontSize: 14,
-    lineHeight: 20,
-  },
-  userMessageText: {
-    color: '#FFFFFF',
+    lineHeight: 22,
   },
   botMessageText: {
     color: '#111827', // gray-900
+  },
+  userMessageText: {
+    color: '#FFFFFF',
   },
   messageTime: {
     fontSize: 12,
@@ -280,6 +334,9 @@ const styles = StyleSheet.create({
   textInput: {
     flex: 1,
   },
+  inputDisabled: {
+    opacity: 0.6,
+  },
   sendButton: {
     width: 40,
     height: 40,
@@ -294,5 +351,53 @@ const styles = StyleSheet.create({
   sendIcon: {
     fontSize: 16,
     color: '#FFFFFF',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  loadingText: {
+    marginLeft: 8,
+    fontStyle: 'italic',
+  },
+  errorContainer: {
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 8,
+  },
+  errorText: {
+    color: '#DC2626',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  scrollToBottomButton: {
+    position: 'absolute',
+    bottom: 100,
+    right: 20,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#1E3A8A',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 4.65,
+    elevation: 8,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  scrollToBottomIcon: {
+    fontSize: 20,
+    color: '#FFFFFF',
+    fontWeight: 'bold',
   },
 });
