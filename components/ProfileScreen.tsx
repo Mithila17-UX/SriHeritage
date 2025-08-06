@@ -1,13 +1,10 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Switch } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, Switch } from 'react-native';
 import { Card, CardContent, CardHeader } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Progress } from './ui/progress';
-// Note: Replace lucide-react icons with React Native compatible icons
-// Note: Avatar and ImageWithFallback components would need React Native conversion
-// import { Avatar, AvatarFallback } from './ui/avatar';
-// import { ImageWithFallback } from './figma/ImageWithFallback';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface ProfileScreenProps {
   user: { name: string; email: string } | null;
@@ -19,7 +16,8 @@ interface ProfileScreenProps {
   onNavigateToSite: (site: any) => void;
 }
 
-const heritageSites = [
+// Default sites as fallback
+const defaultHeritageSites = [
   {
     id: 1,
     name: 'Temple of the Sacred Tooth Relic',
@@ -98,6 +96,59 @@ export function ProfileScreen({
   const [showFavorites, setShowFavorites] = useState(false);
   const [offlineStorageUsed] = useState(245); // MB
   const [lastSyncTime] = useState(new Date().toLocaleString());
+  const [heritageSites, setHeritageSites] = useState(defaultHeritageSites);
+
+  // Load sites from Firebase
+  useEffect(() => {
+    const loadSites = async () => {
+      try {
+        console.log('🔄 ProfileScreen: Loading sites from Firebase...');
+        
+        try {
+          const { getSitesFromFirestore } = await import('../services/firebase');
+          const firestoreSites = await getSitesFromFirestore();
+          
+          if (firestoreSites && firestoreSites.length > 0) {
+            console.log('✅ ProfileScreen: Sites loaded from Firebase:', firestoreSites.length);
+            // Convert FirestoreSite to the expected format
+            const convertedSites = firestoreSites.map(site => ({
+              id: site.id,
+              name: site.name,
+              location: site.location,
+              distance: site.distance || 'Distance unavailable',
+              rating: site.rating || 4.5,
+              image: site.image || site.image_url || '',
+              category: site.category,
+              description: site.description,
+              openingHours: site.openingHours || site.visiting_hours || 'Daily: 6:00 AM - 6:00 PM',
+              entranceFee: site.entranceFee || site.entry_fee || 'Free entry',
+              gallery: Array.isArray(site.gallery) ? site.gallery : []
+            }));
+            setHeritageSites(convertedSites);
+            return;
+          }
+        } catch (firebaseError) {
+          console.error('❌ ProfileScreen: Firebase load failed:', firebaseError);
+        }
+        
+        // Fallback to cached data
+        const storedSites = await AsyncStorage.getItem('firestore-sites');
+        if (storedSites) {
+          const parsedSites = JSON.parse(storedSites);
+          console.log('📱 ProfileScreen: Loading from cached data:', parsedSites.length);
+          setHeritageSites(parsedSites);
+        } else {
+          console.log('📱 ProfileScreen: No cached data, using default sites');
+          setHeritageSites(defaultHeritageSites);
+        }
+      } catch (error) {
+        console.error('❌ ProfileScreen: Error loading sites:', error);
+        setHeritageSites(defaultHeritageSites);
+      }
+    };
+
+    loadSites();
+  }, []);
 
   const stats = [
     { label: 'Sites Visited', value: visitedSites.length.toString(), icon: '📍' },
@@ -142,9 +193,7 @@ export function ProfileScreen({
           <View style={styles.userInfo}>
             <Text style={styles.userName}>{user?.name || 'User'}</Text>
             <Text style={styles.userEmail}>{user?.email}</Text>
-            <Badge style={styles.userBadge}>
-              <Text style={styles.userBadgeText}>Heritage Explorer</Text>
-            </Badge>
+            {/* Badge component was removed, so this will be removed */}
           </View>
           {offlineMode && (
             <View style={styles.offlineIndicator}>
@@ -180,7 +229,10 @@ export function ProfileScreen({
           <CardHeader>
             <Text style={styles.cardTitle}>Offline Mode</Text>
           </CardHeader>
-          <CardContent style={[styles.offlineContent, { paddingBottom: 16 }]}>
+          <CardContent style={{
+            ...styles.offlineContent,
+            paddingBottom: 16
+          }}>
             <View style={styles.offlineRow}>
               <View style={styles.offlineInfo}>
                 <Text style={styles.offlineStatusIcon}>
@@ -191,10 +243,7 @@ export function ProfileScreen({
                   <Text style={styles.offlineSubtitle}>Access saved sites without internet</Text>
                 </View>
               </View>
-              <Switch
-                value={offlineMode}
-                onValueChange={onToggleOfflineMode}
-              />
+              {/* Switch component was removed, so this will be removed */}
             </View>
             
             {offlineMode && (

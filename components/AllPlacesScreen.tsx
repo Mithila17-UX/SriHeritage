@@ -1,12 +1,15 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, FlatList } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, FlatList, Modal } from 'react-native';
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Location from 'expo-location';
+import MapView, { Marker, PROVIDER_GOOGLE, Region, Callout, Polyline } from 'react-native-maps';
 import { databaseService, syncService, authService, Site } from '../services';
+import { getSitesFromFirestore, FirestoreSite } from '../services/firebase';
 // Note: Replace lucide-react icons with React Native compatible icons
 // import { MapPin, Navigation, Star, Search, Filter, Heart, Eye, SortAsc } from 'lucide-react';
 // import { ImageWithFallback } from './figma/ImageWithFallback';
@@ -14,6 +17,11 @@ import { databaseService, syncService, authService, Site } from '../services';
 interface AllPlacesScreenProps {
   user: { name: string; email: string } | null;
   onNavigateToSite: (site: any) => void;
+}
+
+interface RouteCoordinates {
+  latitude: number;
+  longitude: number;
 }
 
 const defaultPlaces: any[] = [];
@@ -33,11 +41,23 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDistrict, setSelectedDistrict] = useState('All Districts');
   const [sortBy, setSortBy] = useState('proximity');
-  const [allPlaces, setAllPlaces] = useState<Site[]>([]);
+  const [allPlaces, setAllPlaces] = useState<Site[]>([]); // Start with empty array
   const [loading, setLoading] = useState(true);
   const [favoriteSites, setFavoriteSites] = useState<number[]>([]);
   const [visitedSites, setVisitedSites] = useState<number[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [showMapModal, setShowMapModal] = useState<boolean>(false);
+  const [selectedPlace, setSelectedPlace] = useState<any>(null);
+  const [userLocation, setUserLocation] = useState<Location.LocationObject | null>(null);
+  const [locationPermission, setLocationPermission] = useState<boolean>(false);
+  const [nearbySites, setNearbySites] = useState<FirestoreSite[]>([]);
+  const [routeCoordinates, setRouteCoordinates] = useState<RouteCoordinates[]>([]);
+  const [mapRegion, setMapRegion] = useState<Region>({
+    latitude: 7.8731, // Sri Lanka center
+    longitude: 80.7718,
+    latitudeDelta: 0.5,
+    longitudeDelta: 0.5,
+  });
 
   // Initialize and load data - bypassing SQLite due to corruption
   useEffect(() => {
@@ -51,6 +71,9 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
         const userId = await AsyncStorage.getItem('userId') || authService.getCurrentUserId();
         setCurrentUserId(userId);
         console.log('👤 Current user ID:', userId);
+        
+        // Request location permission
+        await requestLocationPermission();
         
         // Try to load from Firestore directly (bypassing SQLite)
         console.log('🔄 Attempting direct Firestore fetch...');
@@ -104,75 +127,60 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
                 openingHours: data.openingHours || data.visiting_hours || '',
                 entranceFee: data.entranceFee || data.entry_fee || '',
                 gallery: data.gallery ? (Array.isArray(data.gallery) ? data.gallery : []) : [],
-                updated_at: new Date().toISOString() // Mark as from Firestore
+                updated_at: new Date().toISOString()
               };
               
               firestoreSites.push(siteData);
             });
             
-            // Combine with default places (but prioritize Firestore data)
-            const defaultSitesNotInFirestore = defaultPlaces.filter(
-              defaultSite => !firestoreSites.some(fSite => 
-                fSite.name.toLowerCase() === defaultSite.name.toLowerCase()
-              )
-            );
+            // Use ONLY Firebase data, don't combine with defaults
+            sitesToDisplay = firestoreSites;
+            console.log('✅ Using Firebase data only:', firestoreSites.length, 'sites');
             
-            sitesToDisplay = [...firestoreSites, ...defaultSitesNotInFirestore];
-            console.log('✅ Combined sites from Firestore + defaults:', sitesToDisplay.length);
-            
-            // Cache the sites in AsyncStorage for offline use
+            // Sync to SQLite for better offline support
             try {
-              await AsyncStorage.setItem('cached_sites', JSON.stringify(sitesToDisplay));
-              console.log('✅ Sites cached in AsyncStorage');
-            } catch (cacheError) {
-              console.warn('⚠️ Failed to cache sites:', cacheError);
+              const { databaseService } = await import('../services');
+              
+              // Insert Firebase data into SQLite
+              for (const site of firestoreSites) {
+                await databaseService.insertOrUpdateSite({
+                  id: site.id,
+                  name: site.name,
+                  description: site.description,
+                  location: site.location,
+                  latitude: site.latitude || site.coordinates?.latitude || 0,
+                  longitude: site.longitude || site.coordinates?.longitude || 0,
+                  category: site.category,
+                  image_url: site.image || site.image_url || '',
+                  historical_period: site.historical_period || '',
+                  significance: site.significance || '',
+                  visiting_hours: site.openingHours || site.visiting_hours || '',
+                  entry_fee: site.entranceFee || site.entry_fee || '',
+                  district: site.district || '',
+                  distance: site.distance || '',
+                  rating: site.rating || 4.5,
+                  image: site.image || site.image_url || '',
+                  openingHours: site.openingHours || site.visiting_hours || '',
+                  entranceFee: site.entranceFee || site.entry_fee || '',
+                  gallery: Array.isArray(site.gallery) ? site.gallery.join(',') : '',
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString()
+                });
+              }
+              console.log('✅ Sites synced to SQLite for offline support');
+            } catch (sqliteError) {
+              console.error('❌ Error syncing to SQLite:', sqliteError);
             }
           } else {
-            console.log('⚠️ No sites in Firestore, using defaults');
-            sitesToDisplay = defaultPlaces.map((site: any) => ({
-              ...site,
-              latitude: (site as any).latitude || 0,
-              longitude: (site as any).longitude || 0,
-              created_at: (site as any).created_at || new Date().toISOString(),
-              updated_at: (site as any).updated_at || new Date().toISOString(),
-              gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : [])
-            }));
+            console.log('⚠️ No sites in Firebase, showing empty state');
+            sitesToDisplay = [];
           }
         } catch (firestoreError) {
           console.error('❌ Firestore direct fetch failed:', firestoreError);
-          console.log('🔄 Trying cached data from AsyncStorage...');
-          
-          // Try to load cached data
-          try {
-            const cachedSites = await AsyncStorage.getItem('cached_sites');
-            if (cachedSites) {
-              sitesToDisplay = JSON.parse(cachedSites);
-              console.log('✅ Loaded cached sites:', sitesToDisplay.length);
-            } else {
-              console.log('⚠️ No cached data, using defaults');
-              sitesToDisplay = defaultPlaces.map((site: any) => ({
-                ...site,
-                latitude: (site as any).latitude || 0,
-                longitude: (site as any).longitude || 0,
-                created_at: (site as any).created_at || new Date().toISOString(),
-                updated_at: (site as any).updated_at || new Date().toISOString(),
-                gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : [])
-              }));
-            }
-          } catch (cacheError) {
-            console.error('❌ Failed to load cached data:', cacheError);
-            sitesToDisplay = defaultPlaces.map((site: any) => ({
-              ...site,
-              latitude: (site as any).latitude || 0,
-              longitude: (site as any).longitude || 0,
-              created_at: (site as any).created_at || new Date().toISOString(),
-              updated_at: (site as any).updated_at || new Date().toISOString(),
-              gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : [])
-            }));
-          }
+          console.log('🔄 Falling back to empty state due to Firebase error');
+          sitesToDisplay = [];
         }
         
-        // Format sites for display
         const formattedSites = sitesToDisplay.map((site: any) => ({
           ...site,
           distance: site.distance || `${(Math.random() * 100).toFixed(1)} km`,
@@ -188,36 +196,8 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
         }));
         
         setAllPlaces(formattedSites);
-        console.log('✅ Sites set for display:', formattedSites.length);
-        console.log('🔍 Formatted sites data:', formattedSites.map(site => ({ id: site.id, name: site.name })));
-        
-        // Load user preferences from AsyncStorage (bypassing SQLite)
-        if (userId) {
-          try {
-            const favoritesKey = `favorites_${userId}`;
-            const visitedKey = `visited_${userId}`;
-            
-            const [cachedFavorites, cachedVisited] = await Promise.all([
-              AsyncStorage.getItem(favoritesKey),
-              AsyncStorage.getItem(visitedKey)
-            ]);
-            
-            const favoriteIds = cachedFavorites ? JSON.parse(cachedFavorites) : [];
-            const visitedIds = cachedVisited ? JSON.parse(cachedVisited) : [];
-            
-            setFavoriteSites(favoriteIds);
-            setVisitedSites(visitedIds);
-            console.log('✅ User preferences loaded from AsyncStorage - Favorites:', favoriteIds.length, 'Visited:', visitedIds.length);
-          } catch (prefsError) {
-            console.error('❌ Failed to load user preferences:', prefsError);
-            setFavoriteSites([]);
-            setVisitedSites([]);
-          }
-        }
-        
       } catch (error) {
         console.error('❌ Error initializing AllPlacesScreen:', error);
-        console.log('🔄 Using default places as final fallback');
         setAllPlaces(defaultPlaces.map((site: any) => ({
           ...site,
           latitude: (site as any).latitude || 0,
@@ -228,12 +208,73 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
         })));
       } finally {
         setLoading(false);
-        console.log('✅ AllPlacesScreen initialization complete');
       }
     };
-
     initializeAndLoadData();
   }, []);
+
+  // Request location permission and get user location
+  const requestLocationPermission = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        setLocationPermission(true);
+        const location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
+        setUserLocation(location);
+        console.log('Location permission granted and location obtained');
+      } else {
+        setLocationPermission(false);
+        console.log('Location permission denied');
+      }
+    } catch (error) {
+      console.error('Error requesting location permission:', error);
+      setLocationPermission(false);
+    }
+  };
+
+  // Calculate distance between two points
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
+
+  // Generate route coordinates (simplified - in real app you'd use Google Directions API)
+  const generateRouteCoordinates = (startLat: number, startLon: number, endLat: number, endLon: number): RouteCoordinates[] => {
+    // Create a simple straight line route (in production, use Google Directions API)
+    const steps = 10;
+    const coordinates: RouteCoordinates[] = [];
+    
+    for (let i = 0; i <= steps; i++) {
+      const ratio = i / steps;
+      coordinates.push({
+        latitude: startLat + (endLat - startLat) * ratio,
+        longitude: startLon + (endLon - startLon) * ratio,
+      });
+    }
+    
+    return coordinates;
+  };
+
+  // Load nearby sites from Firestore
+  const loadNearbySites = async () => {
+    try {
+      const sites = await getSitesFromFirestore();
+      // Filter out the current site and limit to nearby sites
+      const filteredSites = sites.filter(s => s.id !== selectedPlace?.id).slice(0, 10);
+      setNearbySites(filteredSites);
+    } catch (error) {
+      console.error('Error loading nearby sites:', error);
+    }
+  };
 
   // Handle favorite toggle - using AsyncStorage instead of SQLite
   const handleToggleFavorite = async (siteId: number) => {
@@ -373,8 +414,67 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
     return sorted;
   }, [allPlaces, searchQuery, selectedDistrict, sortBy]);
 
-  const handleGetDirections = (place: any) => {
-    Alert.alert('Directions', `Getting directions to ${place.name}...`);
+  const handleGetDirections = async (place: any) => {
+    if (!userLocation) {
+      Alert.alert('Location Required', 'Please enable location services to get directions.');
+      return;
+    }
+
+    const placeLat = place.latitude || place.coordinates?.latitude;
+    const placeLon = place.longitude || place.coordinates?.longitude;
+    
+    if (!placeLat || !placeLon) {
+      Alert.alert('Site Location', 'Location information for this site is not available.');
+      return;
+    }
+
+    setSelectedPlace(place);
+
+    // Load nearby sites
+    await loadNearbySites();
+
+    // Generate route coordinates
+    const route = generateRouteCoordinates(
+      userLocation.coords.latitude,
+      userLocation.coords.longitude,
+      placeLat,
+      placeLon
+    );
+    setRouteCoordinates(route);
+
+    // Calculate the bounds to include both user location and destination
+    const userLat = userLocation.coords.latitude;
+    const userLon = userLocation.coords.longitude;
+
+    // Find the minimum and maximum coordinates
+    const minLat = Math.min(userLat, placeLat);
+    const maxLat = Math.max(userLat, placeLat);
+    const minLon = Math.min(userLon, placeLon);
+    const maxLon = Math.max(userLon, placeLon);
+
+    // Calculate the center point
+    const centerLat = (minLat + maxLat) / 2;
+    const centerLon = (minLon + maxLon) / 2;
+
+    // Calculate the span with padding
+    const latDelta = (maxLat - minLat) * 1.5; // 50% padding
+    const lonDelta = (maxLon - minLon) * 1.5; // 50% padding
+
+    // Ensure minimum zoom level for better visibility
+    const minDelta = 0.01; // Minimum zoom level
+    const finalLatDelta = Math.max(latDelta, minDelta);
+    const finalLonDelta = Math.max(lonDelta, minDelta);
+
+    // Update map region to show the entire route
+    const newRegion: Region = {
+      latitude: centerLat,
+      longitude: centerLon,
+      latitudeDelta: finalLatDelta,
+      longitudeDelta: finalLonDelta,
+    };
+
+    setMapRegion(newRegion);
+    setShowMapModal(true);
   };
 
   // Check if we need to reload data (in case of navigation issues)
@@ -396,6 +496,107 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
 
   return (
     <View style={styles.container}>
+      {/* Full Screen Map Modal */}
+      <Modal
+        visible={showMapModal}
+        animationType="slide"
+        presentationStyle="fullScreen"
+      >
+        <View style={styles.mapModalContainer}>
+          {/* Map Header */}
+          <View style={styles.mapHeader}>
+            <TouchableOpacity
+              style={styles.mapBackButton}
+              onPress={() => setShowMapModal(false)}
+            >
+              <Text style={styles.mapBackIcon}>←</Text>
+            </TouchableOpacity>
+            <View style={styles.mapHeaderInfo}>
+              <Text style={styles.mapHeaderTitle}>Route to {selectedPlace?.name}</Text>
+              <Text style={styles.mapHeaderDistance}>
+                {selectedPlace && userLocation ? 
+                  `${calculateDistance(
+                    userLocation.coords.latitude,
+                    userLocation.coords.longitude,
+                    selectedPlace.latitude || selectedPlace.coordinates?.latitude || 0,
+                    selectedPlace.longitude || selectedPlace.coordinates?.longitude || 0
+                  ).toFixed(1)} km away` : 'Distance unavailable'
+                }
+              </Text>
+            </View>
+          </View>
+
+          {/* Map View */}
+          <MapView
+            style={styles.fullScreenMap}
+            provider={PROVIDER_GOOGLE}
+            region={mapRegion}
+            showsUserLocation={true}
+            showsMyLocationButton={true}
+            showsCompass={true}
+            showsScale={true}
+            onRegionChangeComplete={setMapRegion}
+          >
+            {/* User Location Marker */}
+            {userLocation && (
+              <Marker
+                coordinate={{
+                  latitude: userLocation.coords.latitude,
+                  longitude: userLocation.coords.longitude,
+                }}
+                title="Your Location"
+                description="You are here"
+                pinColor="#10B981"
+              />
+            )}
+
+            {/* Destination Marker */}
+            {selectedPlace?.latitude && selectedPlace?.longitude && (
+              <Marker
+                coordinate={{
+                  latitude: selectedPlace.latitude,
+                  longitude: selectedPlace.longitude,
+                }}
+                title={selectedPlace.name}
+                description={selectedPlace.location}
+                pinColor="#EF4444"
+              />
+            )}
+
+            {/* Nearby Sites Markers */}
+            {nearbySites.map((nearbySite) => {
+              const latitude = nearbySite.latitude || nearbySite.coordinates?.latitude;
+              const longitude = nearbySite.longitude || nearbySite.coordinates?.longitude;
+              
+              if (!latitude || !longitude) return null;
+
+              return (
+                <Marker
+                  key={nearbySite.id}
+                  coordinate={{
+                    latitude,
+                    longitude,
+                  }}
+                  title={nearbySite.name}
+                  description={nearbySite.location}
+                  pinColor="#3B82F6"
+                />
+              );
+            })}
+
+            {/* Route Polyline */}
+            {routeCoordinates.length > 0 && (
+              <Polyline
+                coordinates={routeCoordinates}
+                strokeColor="#2563EB"
+                strokeWidth={3}
+                lineDashPattern={[1]}
+              />
+            )}
+          </MapView>
+        </View>
+      </Modal>
+
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
@@ -404,7 +605,7 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
             <Text style={styles.headerSubtitle}>Discover {allPlaces.length} heritage sites across the island</Text>
           </View>
           <View style={styles.headerActions}>
-            <TouchableOpacity 
+            <Button 
               onPress={async () => {
                 console.log('🔄 Database reset triggered');
                 setLoading(true);
@@ -477,129 +678,14 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
                     ]
                   );
                 } catch (error) {
-                  console.error('❌ Error in reset flow:', error);
+                  console.error('❌ Error in reset operation:', error);
                   setLoading(false);
                 }
               }}
-              style={styles.resetButton}
+              style={styles.clearButton}
             >
-              <Text style={styles.refreshButtonText}>🔄</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              onPress={async () => {
-                console.log('🔄 Manual refresh triggered');
-                setLoading(true);
-                
-                try {
-                  console.log('🔄 Refreshing from Firestore...');
-                  
-                  // Direct Firestore fetch
-                  const { firestore } = await import('../services/firebase');
-                  const { collection, getDocs } = await import('firebase/firestore');
-                  
-                  const sitesCollection = collection(firestore, 'sites');
-                  const sitesSnapshot = await getDocs(sitesCollection);
-                  
-                  console.log('📊 Refresh - Firestore query result:', sitesSnapshot.size, 'documents');
-                  
-                  let sitesToDisplay = [];
-                  
-                  if (sitesSnapshot.size > 0) {
-                    const firestoreSites: any[] = [];
-                    sitesSnapshot.forEach((doc) => {
-                      const data = doc.data();
-                      console.log('📄 Refresh - Processing document:', doc.id, data);
-                      
-                      // Handle ID more robustly
-                      let siteId: number;
-                      if (!isNaN(parseInt(doc.id))) {
-                        siteId = parseInt(doc.id);
-                      } else {
-                        siteId = Math.abs(doc.id.split('').reduce((a, b) => {
-                          a = ((a << 5) - a) + b.charCodeAt(0);
-                          return a & a;
-                        }, 0));
-                      }
-                      
-                      const siteData = {
-                        id: siteId,
-                        name: data.name || '',
-                        description: data.description || '',
-                        location: data.location || '',
-                        latitude: data.coordinates?.latitude || data.latitude || 0,
-                        longitude: data.coordinates?.longitude || data.longitude || 0,
-                        category: data.category || '',
-                        image_url: data.image || data.image_url || '',
-                        district: data.district || '',
-                        distance: data.distance || `${(Math.random() * 100).toFixed(1)} km`,
-                        rating: data.rating || 4.5,
-                        image: data.image || data.image_url || '',
-                        openingHours: data.openingHours || data.visiting_hours || '',
-                        entranceFee: data.entranceFee || data.entry_fee || '',
-                        gallery: data.gallery ? (Array.isArray(data.gallery) ? data.gallery : []) : [],
-                        updated_at: new Date().toISOString()
-                      };
-                      
-                      firestoreSites.push(siteData);
-                    });
-                    
-                    // Combine with defaults
-                    const defaultSitesNotInFirestore = defaultPlaces.filter(
-                      defaultSite => !firestoreSites.some(fSite => 
-                        fSite.name.toLowerCase() === defaultSite.name.toLowerCase()
-                      )
-                    );
-                    
-                    sitesToDisplay = [...firestoreSites, ...defaultSitesNotInFirestore];
-                    
-                    // Update cache
-                    await AsyncStorage.setItem('cached_sites', JSON.stringify(sitesToDisplay));
-                    console.log('✅ Sites refreshed and cached:', sitesToDisplay.length);
-                  } else {
-                    sitesToDisplay = defaultPlaces.map((site: any) => ({
-                      ...site,
-                      latitude: (site as any).latitude || 0,
-                      longitude: (site as any).longitude || 0,
-                      created_at: (site as any).created_at || new Date().toISOString(),
-                      updated_at: (site as any).updated_at || new Date().toISOString(),
-                      gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : [])
-                    }));
-                  }
-                  
-                  // Format and display
-                  const formattedSites = sitesToDisplay.map((site: any) => ({
-                    ...site,
-                    distance: site.distance || `${(Math.random() * 100).toFixed(1)} km`,
-                    rating: site.rating || 4.5,
-                    image: site.image || site.image_url || 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=400&h=300&fit=crop',
-                    openingHours: site.openingHours || site.visiting_hours || 'Daily: 6:00 AM - 6:00 PM',
-                    entranceFee: site.entranceFee || site.entry_fee || 'Free entry',
-                    gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : []),
-                    latitude: site.latitude || 0,
-                    longitude: site.longitude || 0,
-                    created_at: site.created_at || new Date().toISOString(),
-                    updated_at: site.updated_at || new Date().toISOString()
-                  }));
-                  
-                  setAllPlaces(formattedSites);
-                  console.log('✅ Refresh complete:', formattedSites.length, 'sites');
-                  
-                  Alert.alert('Success', 'Sites refreshed successfully!');
-                } catch (error) {
-                  console.error('❌ Error refreshing:', error);
-                  Alert.alert('Error', 'Failed to refresh sites. Using cached data.');
-                } finally {
-                  setLoading(false);
-                }
-              }}
-              style={styles.refreshButton}
-            >
-              <Text style={styles.refreshButtonText}>🔄</Text>
-            </TouchableOpacity>
-            <Badge style={styles.headerBadge}>
-              <Text style={styles.headerBadgeText}>{filteredAndSortedPlaces.length} places</Text>
-            </Badge>
+              🔄 Refresh Data
+            </Button>
           </View>
         </View>
 
@@ -654,7 +740,15 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
 
       {/* Places List */}
       <View style={styles.listContainer}>
-        {filteredAndSortedPlaces.length === 0 ? (
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <View style={styles.loadingContent}>
+              <Text style={styles.loadingText}>🏛️</Text>
+              <Text style={styles.loadingTitle}>Loading Heritage Sites...</Text>
+              <Text style={styles.loadingSubtitle}>Fetching data from Firebase</Text>
+            </View>
+          </View>
+        ) : filteredAndSortedPlaces.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyIcon}>📍</Text>
             <Text style={styles.emptyTitle}>No places found</Text>
@@ -728,40 +822,60 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
                               image: data.image || data.image_url || '',
                               openingHours: data.openingHours || data.visiting_hours || '',
                               entranceFee: data.entranceFee || data.entry_fee || '',
-                              gallery: data.gallery ? (Array.isArray(data.gallery) ? data.gallery : []) : [],
+                              gallery: data.gallery ? (Array.isArray(data.gallery) ? data.gallery.join(',') : '') : '',
+                              created_at: new Date().toISOString(),
                               updated_at: new Date().toISOString()
                             };
                             
                             firestoreSites.push(siteData);
                           });
                           
-                          const defaultSitesNotInFirestore = defaultPlaces.filter(
-                            defaultSite => !firestoreSites.some(fSite => 
-                              fSite.name.toLowerCase() === defaultSite.name.toLowerCase()
-                            )
-                          );
+                          // Use ONLY Firebase data, don't combine with defaults
+                          sitesToDisplay = firestoreSites;
+                          console.log('✅ Using Firebase data only:', firestoreSites.length, 'sites');
                           
-                          sitesToDisplay = [...firestoreSites, ...defaultSitesNotInFirestore];
+                          // Sync to SQLite for better offline support
+                          try {
+                            const { databaseService } = await import('../services');
+                            
+                            // Insert Firebase data into SQLite
+                            for (const site of firestoreSites) {
+                              await databaseService.insertOrUpdateSite({
+                                id: site.id,
+                                name: site.name,
+                                description: site.description,
+                                location: site.location,
+                                latitude: site.latitude || site.coordinates?.latitude || 0,
+                                longitude: site.longitude || site.coordinates?.longitude || 0,
+                                category: site.category,
+                                image_url: site.image || site.image_url || '',
+                                historical_period: site.historical_period || '',
+                                significance: site.significance || '',
+                                visiting_hours: site.openingHours || site.visiting_hours || '',
+                                entry_fee: site.entranceFee || site.entry_fee || '',
+                                district: site.district || '',
+                                distance: site.distance || '',
+                                rating: site.rating || 4.5,
+                                image: site.image || site.image_url || '',
+                                openingHours: site.openingHours || site.visiting_hours || '',
+                                entranceFee: site.entranceFee || site.entry_fee || '',
+                                gallery: Array.isArray(site.gallery) ? site.gallery.join(',') : '',
+                                created_at: new Date().toISOString(),
+                                updated_at: new Date().toISOString()
+                              });
+                            }
+                            console.log('✅ Sites synced to SQLite for offline support');
+                          } catch (sqliteError) {
+                            console.error('❌ Error syncing to SQLite:', sqliteError);
+                          }
                         } else {
-                          sitesToDisplay = defaultPlaces.map((site: any) => ({
-                            ...site,
-                            latitude: (site as any).latitude || 0,
-                            longitude: (site as any).longitude || 0,
-                            created_at: (site as any).created_at || new Date().toISOString(),
-                            updated_at: (site as any).updated_at || new Date().toISOString(),
-                            gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : [])
-                          }));
+                          console.log('⚠️ No sites in Firebase, showing empty state');
+                          sitesToDisplay = [];
                         }
                       } catch (firestoreError) {
                         console.error('❌ Firestore direct fetch failed:', firestoreError);
-                        sitesToDisplay = defaultPlaces.map((site: any) => ({
-                          ...site,
-                          latitude: (site as any).latitude || 0,
-                          longitude: (site as any).longitude || 0,
-                          created_at: (site as any).created_at || new Date().toISOString(),
-                          updated_at: (site as any).updated_at || new Date().toISOString(),
-                          gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : [])
-                        }));
+                        console.log('🔄 Falling back to empty state due to Firebase error');
+                        sitesToDisplay = [];
                       }
                       
                       const formattedSites = sitesToDisplay.map((site: any) => ({
@@ -781,14 +895,7 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
                       setAllPlaces(formattedSites);
                     } catch (error) {
                       console.error('❌ Error initializing AllPlacesScreen:', error);
-                      setAllPlaces(defaultPlaces.map((site: any) => ({
-                        ...site,
-                        latitude: (site as any).latitude || 0,
-                        longitude: (site as any).longitude || 0,
-                        created_at: (site as any).created_at || new Date().toISOString(),
-                        updated_at: (site as any).updated_at || new Date().toISOString(),
-                        gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : [])
-                      })));
+                      setAllPlaces([]);
                     } finally {
                       setLoading(false);
                     }
@@ -879,6 +986,16 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
                           <Text style={[styles.actionButtonText, isVisited && styles.visitedActiveText]}>
                             {isVisited ? '👁️ Visited' : '📍 Mark Visited'}
                           </Text>
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            handleGetDirections(place);
+                          }}
+                          style={styles.directionsButton}
+                        >
+                          <Text style={styles.directionsButtonText}>🧭 Get Directions</Text>
                         </TouchableOpacity>
                         
                         <TouchableOpacity
@@ -1236,5 +1353,57 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#92400E',
+  },
+  directionsButton: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    alignItems: 'center',
+    backgroundColor: '#E0F2FE',
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+  },
+  directionsButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1E40AF',
+  },
+  mapModalContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  mapHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 32,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  mapBackButton: {
+    padding: 8,
+    marginRight: 12,
+  },
+  mapBackIcon: {
+    fontSize: 24,
+    color: '#374151',
+  },
+  mapHeaderInfo: {
+    flex: 1,
+  },
+  mapHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  mapHeaderDistance: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  fullScreenMap: {
+    flex: 1,
   },
 });

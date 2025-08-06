@@ -1,15 +1,18 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, Share } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, Share, Modal } from 'react-native';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
 import { Progress } from './ui/progress';
+import * as Location from 'expo-location';
+import MapView, { Marker, PROVIDER_GOOGLE, Region, Callout, Polyline } from 'react-native-maps';
 // Note: Replace lucide-react icons with React Native compatible icons
 // Note: Tabs, Avatar, Textarea components would need React Native conversion
 // import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 // import { Avatar, AvatarFallback } from './ui/avatar';
 // import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { getSitesFromFirestore, FirestoreSite } from '../services/firebase';
 
 interface SiteInformationPageProps {
   site: {
@@ -21,9 +24,17 @@ interface SiteInformationPageProps {
     image: string;
     category: string;
     description: string;
-    openingHours: string;
-    entranceFee: string;
-    gallery: string[];
+    openingHours?: string;
+    entranceFee?: string;
+    visiting_hours?: string; // Old field name
+    entry_fee?: string; // Old field name
+    gallery: string[] | string; // Allow both array and string formats
+    latitude?: number;
+    longitude?: number;
+    coordinates?: {
+      latitude: number;
+      longitude: number;
+    };
   };
   isFavorite: boolean;
   isVisited: boolean;
@@ -49,6 +60,11 @@ interface Review {
   comment: string;
   helpful: number;
   aspectRatings: AspectRating[];
+}
+
+interface RouteCoordinates {
+  latitude: number;
+  longitude: number;
 }
 
 const aspectCategories = [
@@ -100,16 +116,16 @@ const reviews: Review[] = [
     author: 'Emily Chen',
     avatar: 'EC',
     rating: 5,
-    date: '1 month ago',
-    comment: 'The guided tour was very informative. The architectural details and cultural significance make this a truly special place.',
+    date: '3 weeks ago',
+    comment: 'Incredible historical significance and beautiful architecture. The guided tour was very informative.',
     helpful: 15,
     aspectRatings: [
       { aspect: 'Cleanliness', rating: 5, icon: '🧹' },
       { aspect: 'Accessibility', rating: 4, icon: '♿' },
       { aspect: 'Historical Value', rating: 5, icon: '🏛️' },
-      { aspect: 'Photography', rating: 4, icon: '📸' },
+      { aspect: 'Photography', rating: 5, icon: '📸' },
       { aspect: 'Facilities', rating: 4, icon: '🚻' },
-      { aspect: 'Crowd Level', rating: 3, icon: '👥' }
+      { aspect: 'Crowd Level', rating: 4, icon: '👥' }
     ]
   }
 ];
@@ -117,51 +133,279 @@ const reviews: Review[] = [
 export function SiteInformationPage({ 
   site, 
   isFavorite, 
-    isVisited,
+  isVisited,
   isPlanned,
   offlineMode,
   onToggleFavorite,
   onVisitStatusChange,
   onBack 
 }: SiteInformationPageProps) {
-  const [activeTab, setActiveTab] = useState('about');
   const [userRating, setUserRating] = useState(0);
-  const [userAspectRatings, setUserAspectRatings] = useState<{[key: string]: number}>({});
   const [userComment, setUserComment] = useState('');
+  const [userAspectRatings, setUserAspectRatings] = useState<Record<string, number>>({});
   const [showReviewForm, setShowReviewForm] = useState(false);
-  
-  const averageRating = 4.7;
-  const totalReviews = 234;
-
-  // Calculate aspect averages
-  const aspectAverages = aspectCategories.map(category => {
-    const aspectReviews = reviews.flatMap(review => 
-      review.aspectRatings.filter(ar => ar.aspect === category.aspect)
-    );
-    const average = aspectReviews.length > 0 
-      ? aspectReviews.reduce((sum, ar) => sum + ar.rating, 0) / aspectReviews.length 
-      : 0;
-    return { ...category, average: Math.round(average * 10) / 10 };
+  const [userLocation, setUserLocation] = useState<Location.LocationObject | null>(null);
+  const [locationPermission, setLocationPermission] = useState<boolean>(false);
+  const [calculatedDistance, setCalculatedDistance] = useState<string>('');
+  const [showMapModal, setShowMapModal] = useState<boolean>(false);
+  const [nearbySites, setNearbySites] = useState<FirestoreSite[]>([]);
+  const [routeCoordinates, setRouteCoordinates] = useState<RouteCoordinates[]>([]);
+  const [mapRegion, setMapRegion] = useState<Region>({
+    latitude: 7.8731, // Sri Lanka center
+    longitude: 80.7718,
+    latitudeDelta: 0.5,
+    longitudeDelta: 0.5,
   });
+  const [isGettingDirections, setIsGettingDirections] = useState(false);
 
-  const ratingDistribution = [
-    { stars: 5, count: 156, percentage: 67 },
-    { stars: 4, count: 52, percentage: 22 },
-    { stars: 3, count: 18, percentage: 8 },
-    { stars: 2, count: 5, percentage: 2 },
-    { stars: 1, count: 3, percentage: 1 }
-  ];
+  // Debug logging for site data
+  useEffect(() => {
+    console.log('🔍 SiteInformationPage - Site data received:', {
+      id: site.id,
+      name: site.name,
+      gallery: site.gallery,
+      galleryLength: site.gallery?.length,
+      galleryType: typeof site.gallery,
+      isGalleryArray: Array.isArray(site.gallery),
+      galleryFirstItem: site.gallery?.[0],
+      latitude: site.latitude,
+      longitude: site.longitude,
+      coordinates: site.coordinates,
+      openingHours: site.openingHours,
+      visiting_hours: site.visiting_hours,
+      entranceFee: site.entranceFee,
+      entry_fee: site.entry_fee
+    });
+  }, [site]);
+
+  // Use the actual site rating from admin panel instead of calculating from reviews
+  const averageRating = site.rating || 4.5;
+  const totalReviews = reviews.length; // Keep this for display purposes
+
+  // Request location permission and get user location
+  const requestLocationPermission = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        setLocationPermission(true);
+        const location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
+        setUserLocation(location);
+        calculateDistanceFromUser(location);
+        console.log('Location permission granted and location obtained');
+      } else {
+        setLocationPermission(false);
+        Alert.alert(
+          'Location Permission Required',
+          'This app needs location access to show directions. Please enable location permissions in your device settings.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('Error requesting location permission:', error);
+      setLocationPermission(false);
+      Alert.alert(
+        'Location Error',
+        'Unable to get your location. Please check your device settings.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  // Calculate distance between two points
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
+
+  // Calculate distance from user location to site
+  const calculateDistanceFromUser = (location: Location.LocationObject) => {
+    const siteLat = site.latitude || site.coordinates?.latitude;
+    const siteLon = site.longitude || site.coordinates?.longitude;
+    
+    if (siteLat && siteLon) {
+      const distance = calculateDistance(
+        location.coords.latitude,
+        location.coords.longitude,
+        siteLat,
+        siteLon
+      );
+      setCalculatedDistance(`${distance.toFixed(1)} km away`);
+    } else {
+      setCalculatedDistance(site.distance || 'Distance unavailable');
+    }
+  };
+
+  // Generate route coordinates (simplified - in real app you'd use Google Directions API)
+  const generateRouteCoordinates = (startLat: number, startLon: number, endLat: number, endLon: number): RouteCoordinates[] => {
+    // Create a simple straight line route (in production, use Google Directions API)
+    const steps = 10;
+    const coordinates: RouteCoordinates[] = [];
+    
+    for (let i = 0; i <= steps; i++) {
+      const ratio = i / steps;
+      coordinates.push({
+        latitude: startLat + (endLat - startLat) * ratio,
+        longitude: startLon + (endLon - startLon) * ratio,
+      });
+    }
+    
+    return coordinates;
+  };
+
+  // Load nearby sites from Firestore
+  const loadNearbySites = async () => {
+    try {
+      const sites = await getSitesFromFirestore();
+      // Filter out the current site and limit to nearby sites
+      const filteredSites = sites.filter(s => s.id !== site.id).slice(0, 10);
+      setNearbySites(filteredSites);
+    } catch (error) {
+      console.error('Error loading nearby sites:', error);
+    }
+  };
+
+  // Initialize location on component mount
+  useEffect(() => {
+    requestLocationPermission();
+  }, []);
 
   const handleBookRide = () => {
-    if (offlineMode) {
-      Alert.alert('Offline Mode', 'Ride booking is not available in offline mode');
-      return;
-    }
     Alert.alert('Ride Booking', 'Redirecting to PickMe for ride booking...');
   };
 
-  const handleGetDirections = () => {
-    Alert.alert('Directions', 'Opening directions in Google Maps...');
+  const handleGetDirections = async () => {
+    console.log('🧭 SiteInformationPage: Get Directions pressed');
+    console.log('📍 Current state:', { userLocation, locationPermission });
+    
+    setIsGettingDirections(true);
+    
+    try {
+      // Check if we have location permission
+      if (!locationPermission) {
+        console.log('📍 No location permission, requesting...');
+        try {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status === 'granted') {
+            setLocationPermission(true);
+            console.log('✅ Location permission granted');
+          } else {
+            Alert.alert(
+              'Location Permission Required',
+              'Please enable location permissions in your device settings to get directions.',
+              [{ text: 'OK' }]
+            );
+            return;
+          }
+        } catch (error) {
+          console.error('❌ Error requesting location permission:', error);
+          Alert.alert(
+            'Location Error',
+            'Unable to get location permission. Please check your device settings.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+      }
+
+      // If we don't have user location yet, try to get it
+      if (!userLocation) {
+        console.log('📍 No user location, getting current position...');
+        try {
+          const location = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.High,
+          });
+          setUserLocation(location);
+          calculateDistanceFromUser(location);
+          console.log('✅ User location obtained:', location.coords);
+        } catch (error) {
+          console.error('❌ Error getting current location:', error);
+          Alert.alert(
+            'Location Error',
+            'Unable to get your current location. Please check your device settings and try again.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+      }
+
+      // Now check if we have user location
+      if (!userLocation) {
+        Alert.alert(
+          'Location Required',
+          'Unable to get your location. Please check your device settings and try again.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      const siteLat = site.latitude || site.coordinates?.latitude;
+      const siteLon = site.longitude || site.coordinates?.longitude;
+      
+      if (!siteLat || !siteLon) {
+        Alert.alert('Site Location', 'Location information for this site is not available.');
+        return;
+      }
+
+      console.log('🗺️ Generating directions from', userLocation.coords, 'to', { siteLat, siteLon });
+
+      // Load nearby sites
+      await loadNearbySites();
+
+      // Generate route coordinates
+      const route = generateRouteCoordinates(
+        userLocation.coords.latitude,
+        userLocation.coords.longitude,
+        siteLat,
+        siteLon
+      );
+      setRouteCoordinates(route);
+
+      // Calculate the bounds to include both user location and destination
+      const userLat = userLocation.coords.latitude;
+      const userLon = userLocation.coords.longitude;
+
+      // Find the minimum and maximum coordinates
+      const minLat = Math.min(userLat, siteLat);
+      const maxLat = Math.max(userLat, siteLat);
+      const minLon = Math.min(userLon, siteLon);
+      const maxLon = Math.max(userLon, siteLon);
+
+      // Calculate the center point
+      const centerLat = (minLat + maxLat) / 2;
+      const centerLon = (minLon + maxLon) / 2;
+
+      // Calculate the span with padding
+      const latDelta = (maxLat - minLat) * 1.5; // 50% padding
+      const lonDelta = (maxLon - minLon) * 1.5; // 50% padding
+
+      // Ensure minimum zoom level for better visibility
+      const minDelta = 0.01; // Minimum zoom level
+      const finalLatDelta = Math.max(latDelta, minDelta);
+      const finalLonDelta = Math.max(lonDelta, minDelta);
+
+      // Update map region to show the entire route
+      const newRegion: Region = {
+        latitude: centerLat,
+        longitude: centerLon,
+        latitudeDelta: finalLatDelta,
+        longitudeDelta: finalLonDelta,
+      };
+
+      setMapRegion(newRegion);
+      setShowMapModal(true);
+      console.log('✅ Map modal opened with directions');
+    } finally {
+      setIsGettingDirections(false);
+    }
   };
 
   const handleShare = async () => {
@@ -196,6 +440,100 @@ export function SiteInformationPage({
 
   return (
     <View style={styles.container}>
+      {/* Full Screen Map Modal */}
+      <Modal
+        visible={showMapModal}
+        animationType="slide"
+        presentationStyle="fullScreen"
+      >
+        <View style={styles.mapModalContainer}>
+          {/* Map Header */}
+          <View style={styles.mapHeader}>
+            <TouchableOpacity
+              style={styles.mapBackButton}
+              onPress={() => setShowMapModal(false)}
+            >
+              <Text style={styles.mapBackIcon}>←</Text>
+            </TouchableOpacity>
+            <View style={styles.mapHeaderInfo}>
+              <Text style={styles.mapHeaderTitle}>Route to {site.name}</Text>
+              <Text style={styles.mapHeaderDistance}>
+                {calculatedDistance}
+              </Text>
+            </View>
+          </View>
+
+          {/* Map View */}
+          <MapView
+            style={styles.fullScreenMap}
+            provider={PROVIDER_GOOGLE}
+            region={mapRegion}
+            showsUserLocation={true}
+            showsMyLocationButton={true}
+            showsCompass={true}
+            showsScale={true}
+            onRegionChangeComplete={setMapRegion}
+          >
+            {/* User Location Marker */}
+            {userLocation && (
+              <Marker
+                coordinate={{
+                  latitude: userLocation.coords.latitude,
+                  longitude: userLocation.coords.longitude,
+                }}
+                title="Your Location"
+                description="You are here"
+                pinColor="#10B981"
+              />
+            )}
+
+            {/* Destination Marker */}
+            {site.latitude && site.longitude && (
+              <Marker
+                coordinate={{
+                  latitude: site.latitude,
+                  longitude: site.longitude,
+                }}
+                title={site.name}
+                description={site.location}
+                pinColor="#EF4444"
+              />
+            )}
+
+            {/* Nearby Sites Markers */}
+            {nearbySites.map((nearbySite) => {
+              const latitude = nearbySite.latitude || nearbySite.coordinates?.latitude;
+              const longitude = nearbySite.longitude || nearbySite.coordinates?.longitude;
+              
+              if (!latitude || !longitude) return null;
+
+              return (
+                <Marker
+                  key={nearbySite.id}
+                  coordinate={{
+                    latitude,
+                    longitude,
+                  }}
+                  title={nearbySite.name}
+                  description={nearbySite.location}
+                  pinColor="#3B82F6"
+                />
+              );
+            })}
+
+            {/* Route Polyline */}
+            {routeCoordinates.length > 0 && (
+              <Polyline
+                coordinates={routeCoordinates}
+                strokeColor="#2563EB"
+                strokeWidth={3}
+                lineDashPattern={[1]}
+              />
+            )}
+          </MapView>
+        </View>
+      </Modal>
+
       {/* Header Image */}
       <View style={styles.headerImageContainer}>
         <Image
@@ -255,11 +593,11 @@ export function SiteInformationPage({
             <Text style={styles.locationIcon}>📍</Text>
             <Text style={styles.locationText}>{site.location}</Text>
             <Text style={styles.separator}>•</Text>
-            <Text style={styles.distanceText}>{site.distance}</Text>
+            <Text style={styles.distanceText}>{calculatedDistance || site.distance}</Text>
           </View>
           <View style={styles.ratingRow}>
             <Text style={styles.starIcon}>⭐</Text>
-            <Text style={styles.ratingText}>{averageRating}</Text>
+            <Text style={styles.ratingText}>{averageRating.toFixed(1)}</Text>
             <Text style={styles.reviewCount}>({totalReviews} reviews)</Text>
           </View>
         </View>
@@ -269,7 +607,11 @@ export function SiteInformationPage({
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         {/* Basic Info */}
         <Card style={styles.infoCard}>
-          <CardContent style={[styles.infoCardContent, { paddingTop: 16, paddingBottom: 16 }]}>
+          <CardContent style={{
+            ...styles.infoCardContent,
+            paddingTop: 16,
+            paddingBottom: 16
+          }}>
             <Text style={styles.sectionTitle}>About</Text>
             <Text style={styles.description}>{site.description}</Text>
             
@@ -278,7 +620,7 @@ export function SiteInformationPage({
                 <Text style={styles.infoIcon}>🕐</Text>
                 <View style={styles.infoTextContainer}>
                   <Text style={styles.infoLabel}>Opening Hours</Text>
-                  <Text style={styles.infoValue}>{site.openingHours}</Text>
+                  <Text style={styles.infoValue}>{site.openingHours || site.visiting_hours}</Text>
                 </View>
               </View>
               
@@ -286,7 +628,7 @@ export function SiteInformationPage({
                 <Text style={styles.infoIcon}>💰</Text>
                 <View style={styles.infoTextContainer}>
                   <Text style={styles.infoLabel}>Entrance Fee</Text>
-                  <Text style={styles.infoValue}>{site.entranceFee}</Text>
+                  <Text style={styles.infoValue}>{site.entranceFee || site.entry_fee}</Text>
                 </View>
               </View>
               
@@ -305,9 +647,15 @@ export function SiteInformationPage({
 
         {/* Action Buttons */}
         <View style={styles.actionButtonsContainer}>
-          <TouchableOpacity style={styles.primaryActionButton} onPress={handleGetDirections}>
-            <Text style={styles.actionButtonIcon}>🧭</Text>
-            <Text style={styles.actionButtonText}>Get Directions</Text>
+          <TouchableOpacity 
+            style={[styles.primaryActionButton, isGettingDirections && styles.disabledButton]} 
+            onPress={handleGetDirections}
+            disabled={isGettingDirections}
+          >
+            <Text style={styles.actionButtonIcon}>{isGettingDirections ? '⏳' : '🧭'}</Text>
+            <Text style={styles.actionButtonText}>
+              {isGettingDirections ? 'Getting Directions...' : 'Get Directions'}
+            </Text>
           </TouchableOpacity>
           
           <TouchableOpacity style={styles.secondaryActionButton} onPress={handleBookRide}>
@@ -318,7 +666,11 @@ export function SiteInformationPage({
 
         {/* Visit Status */}
         <Card style={styles.statusCard}>
-          <CardContent style={[styles.statusCardContent, { paddingTop: 16, paddingBottom: 16 }]}>
+          <CardContent style={{
+            ...styles.statusCardContent,
+            paddingTop: 16,
+            paddingBottom: 16
+          }}>
             <View style={styles.statusRow}>
               <Text style={styles.statusLabel}>Visit Status:</Text>
               <Select
@@ -339,32 +691,71 @@ export function SiteInformationPage({
         </Card>
 
         {/* Gallery Preview */}
-        {Array.isArray(site.gallery) && site.gallery.length > 0 && (
-          <Card style={styles.galleryCard}>
-            <CardContent style={[styles.galleryCardContent, { paddingTop: 16, paddingBottom: 16 }]}>
-              <Text style={styles.sectionTitle}>Gallery</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.galleryScroll}>
-                {site.gallery.map((imageUrl, index) => (
-                  <Image
-                    key={index}
-                    source={{ uri: imageUrl }}
-                    style={styles.galleryImage}
-                    resizeMode="cover"
-                  />
-                ))}
-              </ScrollView>
-            </CardContent>
-          </Card>
-        )}
+        {(() => {
+          // Handle different gallery data formats
+          let galleryImages: string[] = [];
+          
+          if (Array.isArray(site.gallery)) {
+            galleryImages = site.gallery;
+          } else if (typeof site.gallery === 'string') {
+            // If gallery is a string, try to parse it as JSON or split by comma
+            try {
+              const parsed = JSON.parse(site.gallery);
+              galleryImages = Array.isArray(parsed) ? parsed : [site.gallery];
+            } catch {
+              // If parsing fails, treat as comma-separated string
+              galleryImages = site.gallery.split(',').map(url => url.trim()).filter(url => url.length > 0);
+            }
+          }
+          
+          console.log('🖼️ Gallery processing:', {
+            originalGallery: site.gallery,
+            processedImages: galleryImages,
+            imageCount: galleryImages.length
+          });
+          
+          return galleryImages.length > 0 ? (
+            <Card style={styles.galleryCard}>
+              <CardContent style={{
+                ...styles.galleryCardContent,
+                paddingTop: 16,
+                paddingBottom: 16
+              }}>
+                <Text style={styles.sectionTitle}>Gallery</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.galleryScroll}>
+                  {galleryImages.map((imageUrl, index) => {
+                    console.log(`🖼️ Gallery image ${index}:`, imageUrl);
+                    return (
+                      <Image
+                        key={index}
+                        source={{ uri: imageUrl }}
+                        style={styles.galleryImage}
+                        resizeMode="cover"
+                        onError={(error) => console.log(`❌ Gallery image ${index} error:`, error)}
+                      />
+                    );
+                  })}
+                </ScrollView>
+              </CardContent>
+            </Card>
+          ) : null;
+        })()}
 
         {/* Reviews Summary */}
         <Card style={styles.reviewsCard}>
-          <CardContent style={[styles.reviewsCardContent, { paddingTop: 16, paddingBottom: 16 }]}>
+          <CardContent style={{
+            ...styles.reviewsCardContent,
+            paddingTop: 16,
+            paddingBottom: 16
+          }}>
             <Text style={styles.sectionTitle}>Reviews & Ratings</Text>
             <View style={styles.reviewsSummary}>
               <View style={styles.overallRating}>
-                <Text style={styles.overallRatingNumber}>{averageRating}</Text>
-                <Text style={styles.overallRatingStars}>⭐⭐⭐⭐⭐</Text>
+                <Text style={styles.overallRatingNumber}>{averageRating.toFixed(1)}</Text>
+                <Text style={styles.overallRatingStars}>
+                  {'⭐'.repeat(Math.floor(averageRating))}
+                  {averageRating % 1 >= 0.5 ? '⭐' : ''}
+                </Text>
                 <Text style={styles.totalReviewsText}>{totalReviews} reviews</Text>
               </View>
             </View>
@@ -776,5 +1167,49 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#374151', // gray-700
     lineHeight: 20,
+  },
+  mapModalContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  mapHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB', // gray-200
+  },
+  mapBackButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F3F4F6', // gray-100
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  mapBackIcon: {
+    fontSize: 20,
+    color: '#4B5563', // gray-600
+  },
+  mapHeaderInfo: {
+    flex: 1,
+  },
+  mapHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827', // gray-900
+  },
+  mapHeaderDistance: {
+    fontSize: 14,
+    color: '#6B7280', // gray-500
+  },
+  fullScreenMap: {
+    flex: 1,
+  },
+  disabledButton: {
+    opacity: 0.7,
+    backgroundColor: '#D1D5DB', // gray-300
   },
 });

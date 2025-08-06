@@ -5,6 +5,7 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Progress } from './ui/progress';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { FirestoreSite } from '../services/firebase';
 
 interface DashboardScreenProps {
   user: { name: string; email: string } | null;
@@ -14,11 +15,13 @@ interface DashboardScreenProps {
   onNavigateToScreen: (screen: string) => void;
 }
 
-const defaultHeritageSites = [
+const defaultHeritageSites: FirestoreSite[] = [
   {
     id: 1,
     name: 'Temple of the Sacred Tooth Relic',
     location: 'Kandy',
+    latitude: 7.2955,
+    longitude: 80.6354,
     district: 'Kandy',
     distance: '2.3 km',
     rating: 4.8,
@@ -36,6 +39,8 @@ const defaultHeritageSites = [
     id: 2,
     name: 'Sigiriya Rock Fortress',
     location: 'Sigiriya',
+    latitude: 7.9570,
+    longitude: 80.7603,
     district: 'Matale',
     distance: '45.2 km',
     rating: 4.9,
@@ -53,6 +58,8 @@ const defaultHeritageSites = [
     id: 3,
     name: 'Galle Fort',
     location: 'Galle',
+    latitude: 6.0535,
+    longitude: 80.2210,
     district: 'Galle',
     distance: '78.5 km',
     rating: 4.7,
@@ -70,6 +77,8 @@ const defaultHeritageSites = [
     id: 4,
     name: 'Dambulla Cave Temple',
     location: 'Dambulla',
+    latitude: 7.8567,
+    longitude: 80.6492,
     district: 'Matale',
     distance: '52.1 km',
     rating: 4.6,
@@ -86,17 +95,43 @@ const defaultHeritageSites = [
 ];
 
 export function DashboardScreen({ user, visitedSites, favoriteSites, onNavigateToSite, onNavigateToScreen }: DashboardScreenProps) {
-  const [heritageSites, setHeritageSites] = useState(defaultHeritageSites);
+  const [heritageSites, setHeritageSites] = useState<FirestoreSite[]>(defaultHeritageSites);
 
   useEffect(() => {
     const loadSites = async () => {
       try {
-        const storedSites = await AsyncStorage.getItem('sri-heritage-sites');
+        // First try to load from Firebase
+        console.log('🔄 DashboardScreen: Loading sites from Firebase...');
+        
+        try {
+          const { getSitesFromFirestore } = await import('../services/firebase');
+          const firestoreSites = await getSitesFromFirestore();
+          
+          if (firestoreSites && firestoreSites.length > 0) {
+            console.log('✅ DashboardScreen: Sites loaded from Firebase:', firestoreSites.length);
+            setHeritageSites(firestoreSites);
+            
+            // Store in AsyncStorage for offline access
+            await AsyncStorage.setItem('firestore-sites', JSON.stringify(firestoreSites));
+            return;
+          }
+        } catch (firebaseError) {
+          console.error('❌ DashboardScreen: Firebase load failed:', firebaseError);
+        }
+        
+        // Fallback to cached data
+        const storedSites = await AsyncStorage.getItem('firestore-sites');
         if (storedSites) {
-          setHeritageSites(JSON.parse(storedSites));
+          const parsedSites = JSON.parse(storedSites);
+          console.log('📱 DashboardScreen: Loading from cached data:', parsedSites.length);
+          setHeritageSites(parsedSites);
+        } else {
+          console.log('📱 DashboardScreen: No cached data, using default sites');
+          setHeritageSites(defaultHeritageSites);
         }
       } catch (error) {
-        console.error('Error loading sites:', error);
+        console.error('❌ DashboardScreen: Error loading sites:', error);
+        setHeritageSites(defaultHeritageSites);
       }
     };
 
@@ -106,9 +141,76 @@ export function DashboardScreen({ user, visitedSites, favoriteSites, onNavigateT
     
     return () => clearInterval(interval);
   }, []);
+
+  // Calculate counts from actual data
   const visitedCount = visitedSites.length;
+  const favoriteCount = favoriteSites.length;
   const totalSites = heritageSites.length;
   const progressPercentage = totalSites > 0 ? (visitedCount / totalSites) * 100 : 0;
+
+  // Get visited and favorite sites for recent activities
+  const visitedSitesData = heritageSites.filter(site => visitedSites.includes(site.id));
+  const favoriteSitesData = heritageSites.filter(site => favoriteSites.includes(site.id));
+
+  console.log('📊 DashboardScreen: Counts updated:', {
+    visitedCount,
+    favoriteCount,
+    totalSites,
+    progressPercentage,
+    visitedSitesIds: visitedSites,
+    favoriteSitesIds: favoriteSites
+  });
+
+  // Generate recent activities based on user actions
+  const generateRecentActivities = () => {
+    const activities = [];
+    
+    // Add recent visited sites
+    visitedSitesData.slice(0, 2).forEach(site => {
+      activities.push({
+        type: 'visited',
+        title: `Visited ${site.name}`,
+        time: 'Recently',
+        icon: '📍',
+        color: 'greenBackground'
+      });
+    });
+    
+    // Add recent favorite sites
+    favoriteSitesData.slice(0, 2).forEach(site => {
+      activities.push({
+        type: 'favorited',
+        title: `Added ${site.name} to favorites`,
+        time: 'Recently',
+        icon: '❤️',
+        color: 'redBackground'
+      });
+    });
+    
+    // If no activities, show default ones
+    if (activities.length === 0) {
+      activities.push(
+        {
+          type: 'default',
+          title: 'Start your heritage journey',
+          time: 'Ready to explore',
+          icon: '🗺️',
+          color: 'blueBackground'
+        },
+        {
+          type: 'default',
+          title: 'Discover new sites',
+          time: 'Find amazing places',
+          icon: '🔍',
+          color: 'orangeBackground'
+        }
+      );
+    }
+    
+    return activities.slice(0, 3); // Show max 3 activities
+  };
+
+  const recentActivities = generateRecentActivities();
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -159,7 +261,7 @@ export function DashboardScreen({ user, visitedSites, favoriteSites, onNavigateT
                   <Text style={styles.statLabel}>Visited</Text>
                 </View>
                 <View style={styles.statItem}>
-                  <Text style={[styles.statNumber, styles.orangeText]}>{favoriteSites.length}</Text>
+                  <Text style={[styles.statNumber, styles.orangeText]}>{favoriteCount}</Text>
                   <Text style={styles.statLabel}>Favorites</Text>
                 </View>
                 <View style={styles.statItem}>
@@ -247,7 +349,14 @@ export function DashboardScreen({ user, visitedSites, favoriteSites, onNavigateT
                     </View>
                     
                     <View style={styles.siteActions}>
-                      <TouchableOpacity style={[styles.exploreButton]}>
+                      <TouchableOpacity 
+                        style={[styles.exploreButton]}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          console.log('🧭 DashboardScreen: Explore button pressed for site:', site.name);
+                          onNavigateToSite(site);
+                        }}
+                      >
                         <Text style={styles.exploreButtonText}>🧭 Explore</Text>
                       </TouchableOpacity>
                     </View>
@@ -265,24 +374,17 @@ export function DashboardScreen({ user, visitedSites, favoriteSites, onNavigateT
             <Text style={styles.cardTitle}>📈 Recent Activity</Text>
           </CardHeader>
           <CardContent style={styles.activityContent}>
-            <View style={styles.activityItem}>
-              <View style={[styles.activityIcon, styles.greenBackground]}>
-                <Text style={styles.activityEmoji}>📍</Text>
+            {recentActivities.map((activity, index) => (
+              <View key={index} style={styles.activityItem}>
+                <View style={[styles.activityIcon, styles[activity.color]]}>
+                  <Text style={styles.activityEmoji}>{activity.icon}</Text>
+                </View>
+                <View style={styles.activityText}>
+                  <Text style={styles.activityTitle}>{activity.title}</Text>
+                  <Text style={styles.activityTime}>{activity.time}</Text>
+                </View>
               </View>
-              <View style={styles.activityText}>
-                <Text style={styles.activityTitle}>Visited Temple of the Sacred Tooth</Text>
-                <Text style={styles.activityTime}>2 days ago</Text>
-              </View>
-            </View>
-            <View style={styles.activityItem}>
-              <View style={[styles.activityIcon, styles.blueBackground]}>
-                <Text style={styles.activityEmoji}>📅</Text>
-              </View>
-              <View style={styles.activityText}>
-                <Text style={styles.activityTitle}>Added Galle Fort to favorites</Text>
-                <Text style={styles.activityTime}>1 week ago</Text>
-              </View>
-            </View>
+            ))}
           </CardContent>
         </Card>
       </View>
@@ -602,6 +704,12 @@ const styles = StyleSheet.create({
   },
   blueBackground: {
     backgroundColor: '#DBEAFE',
+  },
+  redBackground: {
+    backgroundColor: '#FEE2E2',
+  },
+  orangeBackground: {
+    backgroundColor: '#FFFBEB',
   },
   activityEmoji: {
     fontSize: 18,

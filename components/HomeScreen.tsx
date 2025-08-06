@@ -1,15 +1,52 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, PermissionsAndroid, Platform } from 'react-native';
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Location from 'expo-location';
+import MapView, { Marker, PROVIDER_GOOGLE, Region, Callout, Polyline } from 'react-native-maps';
+import { getSitesFromFirestore, FirestoreSite } from '../services/firebase';
+import { authService } from '../services/auth';
 
 interface HomeScreenProps {
   user: { name: string; email: string } | null;
   onNavigateToSite: (site: any) => void;
   favoriteSites: number[];
   visitedSites: number[];
+}
+
+interface Site {
+  id: number;
+  name: string;
+  description: string;
+  location: string;
+  latitude: number;
+  longitude: number;
+  category: string;
+  image_url?: string;
+  historical_period?: string;
+  significance?: string;
+  visiting_hours?: string;
+  entry_fee?: string;
+  created_at?: string;
+  updated_at?: string;
+  district?: string;
+  distance?: string;
+  rating?: number;
+  image?: string;
+  openingHours?: string;
+  entranceFee?: string;
+  gallery?: string | string[];
+  coordinates?: {
+    latitude: number;
+    longitude: number;
+  };
+}
+
+interface RouteCoordinates {
+  latitude: number;
+  longitude: number;
 }
 
 const defaultHeritageSites = [
@@ -27,7 +64,9 @@ const defaultHeritageSites = [
     gallery: [
       'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=800&h=600&fit=crop',
       'https://images.unsplash.com/photo-1571715268652-3c2247e38d3e?w=800&h=600&fit=crop'
-    ]
+    ],
+    latitude: 7.2905,
+    longitude: 80.6337
   },
   {
     id: 2,
@@ -43,7 +82,9 @@ const defaultHeritageSites = [
     gallery: [
       'https://images.unsplash.com/photo-1571715268652-3c2247e38d3e?w=800&h=600&fit=crop',
       'https://images.unsplash.com/photo-1587474260584-136574528ed5?w=800&h=600&fit=crop'
-    ]
+    ],
+    latitude: 7.9570,
+    longitude: 80.7603
   },
   {
     id: 3,
@@ -59,7 +100,9 @@ const defaultHeritageSites = [
     gallery: [
       'https://images.unsplash.com/photo-1587474260584-136574528ed5?w=800&h=600&fit=crop',
       'https://images.unsplash.com/photo-1575484470027-8d85bbf23b62?w=800&h=600&fit=crop'
-    ]
+    ],
+    latitude: 6.0535,
+    longitude: 80.2210
   },
   {
     id: 4,
@@ -75,32 +118,368 @@ const defaultHeritageSites = [
     gallery: [
       'https://images.unsplash.com/photo-1575484470027-8d85bbf23b62?w=800&h=600&fit=crop',
       'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=800&h=600&fit=crop'
-    ]
+    ],
+    latitude: 7.8567,
+    longitude: 80.6492
   }
 ];
 
 export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites }: HomeScreenProps) {
   const [selectedSite, setSelectedSite] = useState<number | null>(null);
-  const [heritageSites, setHeritageSites] = useState(defaultHeritageSites);
+  const [heritageSites, setHeritageSites] = useState<Site[]>([]); // Start with empty array
+  const [userLocation, setUserLocation] = useState<Location.LocationObject | null>(null);
+  const [locationPermission, setLocationPermission] = useState<boolean>(false);
+  const [mapRegion, setMapRegion] = useState<Region>({
+    latitude: 7.8731, // Sri Lanka center
+    longitude: 80.7718,
+    latitudeDelta: 0.5,
+    longitudeDelta: 0.5,
+  });
+  const [loading, setLoading] = useState<boolean>(true);
+  const [firestoreLoading, setFirestoreLoading] = useState<boolean>(false);
+  const [showDirections, setShowDirections] = useState<boolean>(false);
+  const [selectedSiteForDirections, setSelectedSiteForDirections] = useState<Site | null>(null);
+  const [routeCoordinates, setRouteCoordinates] = useState<RouteCoordinates[]>([]);
 
-  useEffect(() => {
-    const loadSites = async () => {
-      try {
-        const storedSites = await AsyncStorage.getItem('sri-heritage-sites');
-        if (storedSites) {
-          setHeritageSites(JSON.parse(storedSites));
-        }
-      } catch (error) {
-        console.error('Error loading sites:', error);
+  // Request location permission and get user location
+  const requestLocationPermission = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        setLocationPermission(true);
+        await getCurrentLocation();
+        console.log('Location permission granted and location obtained');
+      } else {
+        setLocationPermission(false);
+        Alert.alert(
+          'Location Permission Required',
+          'This app needs location access to show nearby heritage sites. Please enable location permissions in your device settings.',
+          [{ text: 'OK' }]
+        );
       }
+    } catch (error) {
+      console.error('Error requesting location permission:', error);
+      setLocationPermission(false);
+      Alert.alert(
+        'Location Error',
+        'Unable to get your location. Please check your device settings.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  // Get current location
+  const getCurrentLocation = async () => {
+    try {
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+      setUserLocation(location);
+      
+      // Update map region to include user location
+      const newRegion: Region = {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+        latitudeDelta: 0.1,
+        longitudeDelta: 0.1,
+      };
+      setMapRegion(newRegion);
+      
+      console.log('Current location updated:', location.coords);
+    } catch (error) {
+      console.error('Error getting current location:', error);
+    }
+  };
+
+  // Load sites directly from Firestore
+  const loadSitesFromFirestore = async () => {
+    try {
+      setFirestoreLoading(true);
+      console.log('🔄 Loading sites directly from Firestore...');
+      
+      const firestoreSites = await getSitesFromFirestore();
+      
+      if (firestoreSites && firestoreSites.length > 0) {
+        console.log('✅ Sites loaded from Firestore:', firestoreSites.length);
+        setHeritageSites(firestoreSites);
+        
+        // Store the Firestore data in AsyncStorage for offline access
+        await AsyncStorage.setItem('firestore-sites', JSON.stringify(firestoreSites));
+        await AsyncStorage.setItem('sites-last-updated', new Date().toISOString());
+        
+        // Sync to SQLite for better offline support
+        try {
+          const { databaseService } = await import('../services');
+          
+          // Insert Firebase data into SQLite
+          for (const site of firestoreSites) {
+            await databaseService.insertOrUpdateSite({
+              id: site.id,
+              name: site.name,
+              description: site.description,
+              location: site.location,
+              latitude: site.latitude || site.coordinates?.latitude || 0,
+              longitude: site.longitude || site.coordinates?.longitude || 0,
+              category: site.category,
+              image_url: site.image || site.image_url || '',
+              historical_period: site.historical_period || '',
+              significance: site.significance || '',
+              visiting_hours: site.openingHours || site.visiting_hours || '',
+              entry_fee: site.entranceFee || site.entry_fee || '',
+              district: site.district || '',
+              distance: site.distance || '',
+              rating: site.rating || 4.5,
+              image: site.image || site.image_url || '',
+              openingHours: site.openingHours || site.visiting_hours || '',
+              entranceFee: site.entranceFee || site.entry_fee || '',
+              gallery: Array.isArray(site.gallery) ? site.gallery.join(',') : '',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            });
+          }
+          console.log('✅ Sites synced to SQLite for offline support');
+        } catch (sqliteError) {
+          console.error('❌ Error syncing to SQLite:', sqliteError);
+        }
+      } else {
+        console.log('⚠️ No sites found in Firestore, showing empty state');
+        setHeritageSites([]);
+      }
+    } catch (error) {
+      console.error('❌ Error loading sites from Firestore:', error);
+      
+      // Try to load from AsyncStorage as fallback
+      try {
+        const storedSites = await AsyncStorage.getItem('firestore-sites');
+        if (storedSites) {
+          const parsedSites = JSON.parse(storedSites);
+          console.log('📱 Loading sites from cached data:', parsedSites.length);
+          setHeritageSites(parsedSites);
+        } else {
+          console.log('📱 No cached data, showing empty state');
+          setHeritageSites([]);
+        }
+      } catch (cacheError) {
+        console.error('❌ Error loading cached sites:', cacheError);
+        setHeritageSites([]);
+      }
+    } finally {
+      setFirestoreLoading(false);
+      setLoading(false); // Set main loading state to false
+    }
+  };
+
+  // Calculate distance between two points
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
+
+  // Generate route coordinates (simplified - in real app you'd use Google Directions API)
+  const generateRouteCoordinates = (startLat: number, startLon: number, endLat: number, endLon: number): RouteCoordinates[] => {
+    // Create a simple straight line route (in production, use Google Directions API)
+    const steps = 10;
+    const coordinates: RouteCoordinates[] = [];
+    
+    for (let i = 0; i <= steps; i++) {
+      const ratio = i / steps;
+      coordinates.push({
+        latitude: startLat + (endLat - startLat) * ratio,
+        longitude: startLon + (endLon - startLon) * ratio,
+      });
+    }
+    
+    return coordinates;
+  };
+
+  // Show directions to selected site
+  const showDirectionsToSite = (site: Site) => {
+    if (!userLocation) {
+      Alert.alert('Location Required', 'Please enable location services to get directions.');
+      return;
+    }
+
+    setSelectedSiteForDirections(site);
+    setShowDirections(true);
+
+    // Generate route coordinates
+    const route = generateRouteCoordinates(
+      userLocation.coords.latitude,
+      userLocation.coords.longitude,
+      site.latitude || site.coordinates?.latitude || 0,
+      site.longitude || site.coordinates?.longitude || 0
+    );
+    setRouteCoordinates(route);
+
+    // Calculate distance
+    const distance = calculateDistance(
+      userLocation.coords.latitude,
+      userLocation.coords.longitude,
+      site.latitude || site.coordinates?.latitude || 0,
+      site.longitude || site.coordinates?.longitude || 0
+    );
+
+    // Calculate the bounds to include both user location and destination
+    const userLat = userLocation.coords.latitude;
+    const userLon = userLocation.coords.longitude;
+    const siteLat = site.latitude || site.coordinates?.latitude || 0;
+    const siteLon = site.longitude || site.coordinates?.longitude || 0;
+
+    // Find the minimum and maximum coordinates
+    const minLat = Math.min(userLat, siteLat);
+    const maxLat = Math.max(userLat, siteLat);
+    const minLon = Math.min(userLon, siteLon);
+    const maxLon = Math.max(userLon, siteLon);
+
+    // Calculate the center point
+    const centerLat = (minLat + maxLat) / 2;
+    const centerLon = (minLon + maxLon) / 2;
+
+    // Calculate the span with padding
+    const latDelta = (maxLat - minLat) * 1.5; // 50% padding
+    const lonDelta = (maxLon - minLon) * 1.5; // 50% padding
+
+    // Ensure minimum zoom level for better visibility
+    const minDelta = 0.01; // Minimum zoom level
+    const finalLatDelta = Math.max(latDelta, minDelta);
+    const finalLonDelta = Math.max(lonDelta, minDelta);
+
+    // Update map region to show the entire route
+    const newRegion: Region = {
+      latitude: centerLat,
+      longitude: centerLon,
+      latitudeDelta: finalLatDelta,
+      longitudeDelta: finalLonDelta,
     };
 
-    loadSites();
-    
-    const interval = setInterval(loadSites, 2000); 
-    
-    return () => clearInterval(interval);
+    // Use setTimeout to ensure the route coordinates are set before updating the region
+    setTimeout(() => {
+      setMapRegion(newRegion);
+    }, 100);
+
+    Alert.alert(
+      'Directions',
+      `Route to ${site.name}\nDistance: ${distance.toFixed(1)} km\nEstimated time: ${Math.ceil(distance * 2)} minutes`,
+      [{ text: 'OK' }]
+    );
+  };
+
+  // Clear directions
+  const clearDirections = () => {
+    setShowDirections(false);
+    setSelectedSiteForDirections(null);
+    setRouteCoordinates([]);
+    fitMapToSites();
+  };
+
+  // Fit map to show all sites and user location
+  const fitMapToSites = () => {
+    if (heritageSites.length === 0) return;
+
+    // Filter out sites with invalid coordinates
+    const validSites = heritageSites.filter(site => {
+      const lat = site.latitude || site.coordinates?.latitude;
+      const lon = site.longitude || site.coordinates?.longitude;
+      return lat && lon && lat !== 0 && lon !== 0;
+    });
+
+    if (validSites.length === 0) {
+      // If no valid sites, set a default region around user location
+      if (userLocation) {
+        setMapRegion({
+          latitude: userLocation.coords.latitude,
+          longitude: userLocation.coords.longitude,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        });
+      }
+      return;
+    }
+
+    const coordinates = validSites.map(site => ({
+      latitude: site.latitude || site.coordinates?.latitude || 0,
+      longitude: site.longitude || site.coordinates?.longitude || 0,
+    }));
+
+    if (userLocation) {
+      coordinates.push({
+        latitude: userLocation.coords.latitude,
+        longitude: userLocation.coords.longitude,
+      });
+    }
+
+    const minLat = Math.min(...coordinates.map(c => c.latitude));
+    const maxLat = Math.max(...coordinates.map(c => c.latitude));
+    const minLon = Math.min(...coordinates.map(c => c.longitude));
+    const maxLon = Math.max(...coordinates.map(c => c.longitude));
+
+    // Ensure minimum delta values to prevent zoom issues
+    const latDelta = Math.max((maxLat - minLat) * 1.2, 0.01);
+    const lonDelta = Math.max((maxLon - minLon) * 1.2, 0.01);
+
+    const newRegion: Region = {
+      latitude: (minLat + maxLat) / 2,
+      longitude: (minLon + maxLon) / 2,
+      latitudeDelta: latDelta,
+      longitudeDelta: lonDelta,
+    };
+
+    setMapRegion(newRegion);
+  };
+
+  useEffect(() => {
+    const initializeMap = async () => {
+      await requestLocationPermission();
+      await loadSitesFromFirestore();
+    };
+
+    initializeMap();
   }, []);
+
+  useEffect(() => {
+    if (heritageSites.length > 0 && !loading) {
+      fitMapToSites();
+    }
+  }, [heritageSites, userLocation, loading]);
+
+  // Update location periodically
+  useEffect(() => {
+    if (locationPermission) {
+      const locationInterval = setInterval(() => {
+        getCurrentLocation();
+      }, 30000); // Update every 30 seconds
+
+      return () => clearInterval(locationInterval);
+    }
+  }, [locationPermission]);
+
+  const handleMarkerPress = (site: Site) => {
+    console.log('🗺️ HomeScreen: Navigating to site:', {
+      id: site.id,
+      name: site.name,
+      gallery: site.gallery,
+      galleryType: typeof site.gallery,
+      isGalleryArray: Array.isArray(site.gallery),
+      galleryLength: Array.isArray(site.gallery) ? site.gallery.length : 'N/A'
+    });
+    onNavigateToSite(site);
+  };
+
+  const getMarkerColor = (site: Site) => {
+    const isFavorite = favoriteSites.includes(site.id);
+    const isVisited = visitedSites.includes(site.id);
+    
+    if (isFavorite) return '#EF4444'; // Red for favorites
+    if (isVisited) return '#10B981'; // Green for visited
+    return '#3B82F6'; // Blue for regular sites
+  };
 
   return (
     <View style={styles.container}>
@@ -112,34 +491,182 @@ export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites
           </View>
           <View style={styles.headerText}>
             <Text style={styles.headerTitle}>Heritage Sites Map</Text>
-            <Text style={styles.headerSubtitle}>Discover and navigate to cultural sites</Text>
+            <Text style={styles.headerSubtitle}>
+              {firestoreLoading ? 'Loading from Firestore...' : 'Discover and navigate to cultural sites'}
+            </Text>
           </View>
         </View>
       </View>
 
-      {/* Map Area - Placeholder */}
+      {/* Interactive Map */}
       <View style={styles.mapContainer}>
-        <View style={styles.mapPlaceholder}>
-          <View style={styles.mapCenter}>
-            <View style={styles.mapIcon}>
-              <Text style={styles.mapIconText}>🗺️</Text>
-            </View>
-            <Text style={styles.mapTitle}>Interactive Map View</Text>
-            <Text style={styles.mapSubtitle}>Heritage sites will appear as pins</Text>
+        {loading || firestoreLoading ? (
+          <View style={styles.mapLoadingContainer}>
+            <Text style={styles.mapLoadingText}>🗺️</Text>
+            <Text style={styles.mapLoadingTitle}>Loading Heritage Sites...</Text>
+            <Text style={styles.mapLoadingSubtitle}>Fetching data from Firebase</Text>
           </View>
-        </View>
-        
-        {/* Mock map pins */}
-        <View style={[styles.mapPin, styles.mapPin1, { backgroundColor: '#EF4444' }]}><Text style={styles.mapPinIcon}>📍</Text></View>
-        <View style={[styles.mapPin, styles.mapPin2, { backgroundColor: '#3B82F6' }]}><Text style={styles.mapPinIcon}>📍</Text></View>
-        <View style={[styles.mapPin, styles.mapPin3, { backgroundColor: '#10B981' }]}><Text style={styles.mapPinIcon}>📍</Text></View>
+        ) : locationPermission ? (
+          (() => {
+            try {
+              return (
+                <MapView
+                  style={styles.map}
+                  provider={PROVIDER_GOOGLE}
+                  region={mapRegion}
+                  showsUserLocation={true}
+                  showsMyLocationButton={true}
+                  showsCompass={true}
+                  showsScale={true}
+                  onRegionChangeComplete={setMapRegion}
+                >
+                  {/* User Location Marker */}
+                  {userLocation && (
+                    <Marker
+                      coordinate={{
+                        latitude: userLocation.coords.latitude,
+                        longitude: userLocation.coords.longitude,
+                      }}
+                      title="Your Location"
+                      description="You are here"
+                      pinColor="#10B981"
+                    />
+                  )}
+
+                  {/* Heritage Sites Markers */}
+                  {heritageSites.map((site) => {
+                    const latitude = site.latitude || site.coordinates?.latitude;
+                    const longitude = site.longitude || site.coordinates?.longitude;
+                    
+                    // Skip markers with invalid coordinates
+                    if (!latitude || !longitude || latitude === 0 || longitude === 0) {
+                      return null;
+                    }
+
+                    // Calculate distance from user location
+                    let distanceText = 'Distance unavailable';
+                    if (userLocation) {
+                      const distance = calculateDistance(
+                        userLocation.coords.latitude,
+                        userLocation.coords.longitude,
+                        latitude,
+                        longitude
+                      );
+                      distanceText = `${distance.toFixed(1)} km away`;
+                    }
+
+                    return (
+                      <Marker
+                        key={site.id}
+                        coordinate={{
+                          latitude,
+                          longitude,
+                        }}
+                        title={site.name}
+                        description={`${site.location} • ${distanceText}`}
+                        pinColor={getMarkerColor(site)}
+                        onPress={() => handleMarkerPress(site)}
+                      >
+                        <Callout tooltip>
+                          <View style={styles.calloutContainer}>
+                            <View style={styles.calloutHeader}>
+                              <Text style={styles.calloutTitle}>{site.name}</Text>
+                              <Text style={styles.calloutLocation}>{site.location}</Text>
+                              <Text style={styles.calloutDistance}>{distanceText}</Text>
+                            </View>
+                            <View style={styles.calloutContent}>
+                              <Text style={styles.calloutCategory}>{site.category}</Text>
+                              <Text style={styles.calloutRating}>⭐ {site.rating || 4.5}</Text>
+                            </View>
+                            <View style={styles.calloutActions}>
+                              <TouchableOpacity
+                                style={styles.calloutButton}
+                                onPress={() => onNavigateToSite(site)}
+                              >
+                                <Text style={styles.calloutButtonText}>View Details</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={styles.calloutButton}
+                                onPress={() => showDirectionsToSite(site)}
+                              >
+                                <Text style={styles.calloutButtonText}>Get Directions</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        </Callout>
+                      </Marker>
+                    );
+                  })}
+
+                  {/* Route Polyline */}
+                  {routeCoordinates.length > 0 && (
+                    <Polyline
+                      coordinates={routeCoordinates}
+                      strokeColor="#2563EB"
+                      strokeWidth={3}
+                      lineDashPattern={[1]}
+                    />
+                  )}
+                </MapView>
+              );
+            } catch (error) {
+              console.error('Map rendering error:', error);
+              return (
+                <View style={styles.mapErrorContainer}>
+                  <Text style={styles.mapErrorText}>🗺️</Text>
+                  <Text style={styles.mapErrorTitle}>Map Loading Error</Text>
+                  <Text style={styles.mapErrorSubtitle}>Please try refreshing the app</Text>
+                </View>
+              );
+            }
+          })()
+        ) : (
+          <View style={styles.mapPermissionContainer}>
+            <Text style={styles.mapPermissionText}>📍</Text>
+            <Text style={styles.mapPermissionTitle}>Location Permission Required</Text>
+            <Text style={styles.mapPermissionSubtitle}>Please enable location access to view the map</Text>
+            <TouchableOpacity
+              style={styles.mapPermissionButton}
+              onPress={requestLocationPermission}
+            >
+              <Text style={styles.mapPermissionButtonText}>Enable Location</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Directions Control */}
+        {showDirections && selectedSiteForDirections && (
+          <View style={styles.directionsControl}>
+            <View style={styles.directionsInfo}>
+              <Text style={styles.directionsTitle}>Route to {selectedSiteForDirections.name}</Text>
+              {userLocation && (
+                <Text style={styles.directionsDistance}>
+                  Distance: {calculateDistance(
+                    userLocation.coords.latitude,
+                    userLocation.coords.longitude,
+                    selectedSiteForDirections.latitude || selectedSiteForDirections.coordinates?.latitude || 0,
+                    selectedSiteForDirections.longitude || selectedSiteForDirections.coordinates?.longitude || 0
+                  ).toFixed(1)} km
+                </Text>
+              )}
+            </View>
+            <TouchableOpacity 
+              style={styles.clearDirectionsButton}
+              onPress={clearDirections}
+            >
+              <Text style={styles.clearDirectionsButtonText}>Clear Route</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       {/* Sites List */}
       <ScrollView style={styles.listContainer} contentContainerStyle={styles.listContent}>
         <View style={styles.listHeader}>
           <Text style={styles.listTitle}>Nearby Heritage Sites</Text>
-          <Text style={styles.listSubtitle}>Discover the cultural treasures around you</Text>
+          <Text style={styles.listSubtitle}>
+            {firestoreLoading ? 'Loading from Firestore...' : 'Discover the cultural treasures around you'}
+          </Text>
         </View>
         
         <View style={styles.sitesList}>
@@ -147,17 +674,36 @@ export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites
             const isFavorite = favoriteSites.includes(site.id);
             const isVisited = visitedSites.includes(site.id);
             
+            // Calculate distance if user location is available
+            let distanceText = site.distance || 'Distance unavailable';
+            if (userLocation) {
+              const latitude = site.latitude || site.coordinates?.latitude;
+              const longitude = site.longitude || site.coordinates?.longitude;
+              if (latitude && longitude) {
+                const distance = calculateDistance(
+                  userLocation.coords.latitude,
+                  userLocation.coords.longitude,
+                  latitude,
+                  longitude
+                );
+                distanceText = `${distance.toFixed(1)} km away`;
+              }
+            }
+            
             return (
               <TouchableOpacity 
                 key={site.id}
                 onPress={() => setSelectedSite(selectedSite === site.id ? null : site.id)}
               >
-                <Card style={[styles.siteCard, selectedSite === site.id && styles.selectedSiteCard]}>
+                <Card style={{
+                  ...styles.siteCard,
+                  ...(selectedSite === site.id ? styles.selectedSiteCard : {})
+                }}>
                   <CardContent style={styles.siteCardContent}>
                     <View style={styles.cardTopSection}>
                       <View style={styles.siteImageContainer}>
-                        {site.image ? (
-                           <Image source={{ uri: site.image }} style={styles.siteImage} resizeMode="cover" />
+                        {site.image || site.image_url ? (
+                           <Image source={{ uri: site.image || site.image_url }} style={styles.siteImage} resizeMode="cover" />
                         ) : (
                           <View style={styles.noImagePlaceholder}><Text style={styles.noImageText}>📷</Text></View>
                         )}
@@ -168,10 +714,10 @@ export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites
                       <View style={styles.siteInfo}>
                         <Text style={styles.siteName} numberOfLines={1}>{site.name}</Text>
                         <Text style={styles.siteDetailText}>{site.location}</Text>
-                        <Text style={styles.siteDetailText}>{site.distance} away</Text>
+                        <Text style={styles.siteDetailText}>{distanceText}</Text>
                         <View style={styles.siteMetadata}>
                           <Badge style={styles.categoryBadge}>{site.category}</Badge>
-                          <Text style={styles.rating}>⭐ {site.rating}</Text>
+                          <Text style={styles.rating}>⭐ {site.rating || 4.5}</Text>
                         </View>
                       </View>
                     </View>
@@ -192,7 +738,12 @@ export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites
                       <View style={styles.expandedContent}>
                         <Text style={styles.siteDescription}>{site.description}</Text>
                         <View style={styles.actionButtons}>
-                          <TouchableOpacity style={styles.primaryButton}><Text style={styles.primaryButtonText}>Get Directions</Text></TouchableOpacity>
+                          <TouchableOpacity 
+                            style={styles.primaryButton}
+                            onPress={() => showDirectionsToSite(site)}
+                          >
+                            <Text style={styles.primaryButtonText}>Get Directions</Text>
+                          </TouchableOpacity>
                           <TouchableOpacity style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Book a Ride</Text></TouchableOpacity>
                         </View>
                       </View>
@@ -218,17 +769,64 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 22, fontWeight: '700', color: '#FFFFFF', marginBottom: 4 },
   headerSubtitle: { fontSize: 14, color: '#D1FAE5' },
   mapContainer: { height: 256, backgroundColor: '#DCFCE7', position: 'relative' },
-  mapPlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  mapCenter: { alignItems: 'center' },
-  mapIcon: { width: 64, height: 64, backgroundColor: '#EA580C', borderRadius: 32, justifyContent: 'center', alignItems: 'center', marginBottom: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 8, elevation: 8 },
-  mapIconText: { fontSize: 24 },
-  mapTitle: { fontSize: 16, color: '#4B5563', marginBottom: 4 },
-  mapSubtitle: { fontSize: 14, color: '#6B7280' },
-  mapPin: { position: 'absolute', width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 4 },
-  mapPin1: { top: 48, left: 64 },
-  mapPin2: { top: 80, right: 80 },
-  mapPin3: { bottom: 64, left: '33%' },
-  mapPinIcon: { fontSize: 16 },
+  map: { flex: 1 },
+  mapLoadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#DCFCE7' },
+  mapLoadingText: { fontSize: 48, color: '#2563EB', marginBottom: 12 },
+  mapLoadingTitle: { fontSize: 18, fontWeight: 'bold', color: '#111827', marginBottom: 4 },
+  mapLoadingSubtitle: { fontSize: 14, color: '#4B5563', marginBottom: 16 },
+  mapPermissionContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#DCFCE7' },
+  mapPermissionText: { fontSize: 48, color: '#2563EB', marginBottom: 12 },
+  mapPermissionTitle: { fontSize: 18, fontWeight: 'bold', color: '#111827', marginBottom: 4 },
+  mapPermissionSubtitle: { fontSize: 14, color: '#4B5563', marginBottom: 16 },
+  mapPermissionButton: { backgroundColor: '#2563EB', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
+  mapPermissionButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
+  // Callout styles for map markers
+  calloutContainer: { 
+    backgroundColor: '#FFFFFF', 
+    borderRadius: 12, 
+    padding: 12, 
+    minWidth: 200, 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 4 }, 
+    shadowOpacity: 0.25, 
+    shadowRadius: 8, 
+    elevation: 8 
+  },
+  calloutHeader: { marginBottom: 8 },
+  calloutTitle: { fontSize: 16, fontWeight: 'bold', color: '#111827', marginBottom: 2 },
+  calloutLocation: { fontSize: 14, color: '#6B7280', marginBottom: 2 },
+  calloutDistance: { fontSize: 12, color: '#10B981', fontWeight: '600' },
+  calloutContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  calloutCategory: { fontSize: 12, color: '#3B82F6', backgroundColor: '#E0E7FF', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  calloutRating: { fontSize: 12, color: '#F59E42', fontWeight: 'bold' },
+  calloutActions: { flexDirection: 'row', gap: 8 },
+  calloutButton: { flex: 1, backgroundColor: '#2563EB', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6, alignItems: 'center' },
+  calloutButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
+  directionsButton: { flex: 1, backgroundColor: '#10B981', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6, alignItems: 'center' },
+  directionsButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
+  // Directions control
+  directionsControl: { 
+    position: 'absolute', 
+    top: 16, 
+    left: 16, 
+    right: 16, 
+    backgroundColor: '#FFFFFF', 
+    borderRadius: 12, 
+    padding: 12, 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 4 }, 
+    shadowOpacity: 0.25, 
+    shadowRadius: 8, 
+    elevation: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  directionsInfo: { flex: 1 },
+  directionsTitle: { fontSize: 14, fontWeight: 'bold', color: '#111827', marginBottom: 2 },
+  directionsDistance: { fontSize: 12, color: '#10B981', fontWeight: '600' },
+  clearDirectionsButton: { backgroundColor: '#EF4444', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6 },
+  clearDirectionsButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
   listContainer: { flex: 1 },
   listContent: { padding: 16 },
   listHeader: { marginBottom: 16 },
@@ -263,4 +861,8 @@ const styles = StyleSheet.create({
   primaryButtonText: { fontSize: 14, color: '#FFFFFF', fontWeight: '600' },
   secondaryButton: { flex: 1, backgroundColor: 'transparent', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 6, borderWidth: 1, borderColor: '#D1D5DB', alignItems: 'center', justifyContent: 'center' },
   secondaryButtonText: { fontSize: 14, color: '#374151', fontWeight: '500' },
+  mapErrorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FEE2E2' },
+  mapErrorText: { fontSize: 48, color: '#991B1B', marginBottom: 12 },
+  mapErrorTitle: { fontSize: 18, fontWeight: 'bold', color: '#991B1B', marginBottom: 4 },
+  mapErrorSubtitle: { fontSize: 14, color: '#991B1B', marginBottom: 16 },
 });

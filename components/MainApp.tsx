@@ -29,9 +29,17 @@ interface SiteData {
   image: string;
   category: string;
   description: string;
-  openingHours: string;
-  entranceFee: string;
-  gallery: string[];
+  openingHours?: string;
+  entranceFee?: string;
+  visiting_hours?: string; // Old field name for compatibility
+  entry_fee?: string; // Old field name for compatibility
+  gallery: string[] | string; // Allow both array and string formats
+  latitude?: number;
+  longitude?: number;
+  coordinates?: {
+    latitude: number;
+    longitude: number;
+  };
 }
 
 export function MainApp({ user, onLogout }: MainAppProps) {
