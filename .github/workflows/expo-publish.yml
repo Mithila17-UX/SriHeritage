@@ -36,6 +36,6 @@ jobs:
       #     CI: true
 
       - name: Deploy to Expo with EAS
-        run: npx eas update --non-interactive --branch dev
+        run: npx eas update --non-interactive --branch dev --message "Automated deploy from CI"
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
