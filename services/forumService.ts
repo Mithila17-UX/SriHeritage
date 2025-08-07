@@ -129,6 +129,8 @@ class ForumService {
     limit?: number;
     lastDoc?: QueryDocumentSnapshot;
     approvedOnly?: boolean;
+    sortBy?: 'likes' | 'createdAt';
+    timeFilter?: string;
   } = {}): Promise<{ posts: ForumPost[]; lastDoc?: QueryDocumentSnapshot }> {
     try {
       // Use fallback if indexes are still building
@@ -159,8 +161,17 @@ class ForumService {
         q = query(q, where('isApproved', '==', true));
       }
 
+      // Add time filter
+      if (options.timeFilter) {
+        q = query(q, where('createdAt', '>=', options.timeFilter));
+      }
+
       // Add ordering and pagination
-      q = query(q, orderBy('createdAt', 'desc'));
+      if (options.sortBy === 'likes') {
+        q = query(q, orderBy('likes', 'desc'));
+      } else {
+        q = query(q, orderBy('createdAt', 'desc'));
+      }
       
       if (options.limit) {
         q = query(q, limit(options.limit));
@@ -199,6 +210,8 @@ class ForumService {
     limit?: number;
     lastDoc?: QueryDocumentSnapshot;
     approvedOnly?: boolean;
+    sortBy?: 'likes' | 'createdAt';
+    timeFilter?: string;
   } = {}): Promise<{ posts: ForumPost[]; lastDoc?: QueryDocumentSnapshot }> {
     try {
       console.log('🔄 Using simple fallback query (no indexes required)...');
@@ -223,12 +236,17 @@ class ForumService {
         if (options.approvedOnly !== false && !post.isApproved) return;
         if (options.category && post.category !== options.category) return;
         if (options.siteId && post.siteId !== options.siteId) return;
+        if (options.timeFilter && new Date(post.createdAt) < new Date(options.timeFilter)) return;
         
         fallbackPosts.push(post);
       });
 
-      // Sort by createdAt in memory
-      fallbackPosts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      // Sort in memory based on sortBy option
+      if (options.sortBy === 'likes') {
+        fallbackPosts.sort((a, b) => (b.likes || 0) - (a.likes || 0));
+      } else {
+        fallbackPosts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      }
       
       // Apply limit in memory
       const limitedPosts = options.limit ? fallbackPosts.slice(0, options.limit) : fallbackPosts;

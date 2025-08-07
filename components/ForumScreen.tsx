@@ -14,7 +14,8 @@ interface ForumScreenProps {
 }
 
 export function ForumScreen({ user }: ForumScreenProps) {
-  const [filter, setFilter] = useState<'all' | 'my-posts' | 'popular'>('all');
+  const [filter, setFilter] = useState<'all' | 'my-posts' | 'popular' | 'recent'>('all');
+  const [timeFilter, setTimeFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
   const [isCreatingPost, setIsCreatingPost] = useState(false);
   const [forumPosts, setForumPosts] = useState<ForumPost[]>([]);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
@@ -40,6 +41,36 @@ export function ForumScreen({ user }: ForumScreenProps) {
         options.userId = authService.getCurrentUserId();
       }
 
+      if (filter === 'popular') {
+        options.sortBy = 'likes';
+      }
+
+      if (filter === 'recent') {
+        options.sortBy = 'createdAt';
+      }
+
+      // Add time filter
+      if (timeFilter !== 'all') {
+        const now = new Date();
+        let cutoffDate: Date;
+        
+        switch (timeFilter) {
+          case 'today':
+            cutoffDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            break;
+          case 'week':
+            cutoffDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            break;
+          case 'month':
+            cutoffDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            break;
+          default:
+            cutoffDate = new Date(0);
+        }
+        
+        options.timeFilter = cutoffDate.toISOString();
+      }
+
       if (!refresh && lastDoc) {
         options.lastDoc = lastDoc;
       }
@@ -62,7 +93,7 @@ export function ForumScreen({ user }: ForumScreenProps) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [filter, user, lastDoc, loading]);
+  }, [filter, timeFilter, user, lastDoc, loading]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -250,8 +281,9 @@ export function ForumScreen({ user }: ForumScreenProps) {
         <View style={styles.filterTabs}>
           {[
             { key: 'all', label: 'All' },
-            { key: 'my-posts', label: 'My Posts' },
-            { key: 'popular', label: 'Popular' }
+            { key: 'recent', label: 'Recent' },
+            { key: 'popular', label: 'Popular' },
+            { key: 'my-posts', label: 'My Posts' }
           ].map((tab) => (
             <TouchableOpacity
               key={tab.key}
@@ -269,9 +301,35 @@ export function ForumScreen({ user }: ForumScreenProps) {
               </Text>
             </TouchableOpacity>
           ))}
-          <TouchableOpacity style={styles.filterButton}>
-            <Text style={styles.filterIcon}>🔽</Text>
-          </TouchableOpacity>
+        </View>
+        
+        {/* Time Filter */}
+        <View style={styles.timeFilterContainer}>
+          <Text style={styles.timeFilterLabel}>Time:</Text>
+          <View style={styles.timeFilterTabs}>
+            {[
+              { key: 'all', label: 'All Time' },
+              { key: 'today', label: 'Today' },
+              { key: 'week', label: 'This Week' },
+              { key: 'month', label: 'This Month' }
+            ].map((tab) => (
+              <TouchableOpacity
+                key={tab.key}
+                style={[
+                  styles.timeFilterTab,
+                  timeFilter === tab.key && styles.activeTimeFilterTab
+                ]}
+                onPress={() => setTimeFilter(tab.key as any)}
+              >
+                <Text style={[
+                  styles.timeFilterTabText,
+                  timeFilter === tab.key && styles.activeTimeFilterTabText
+                ]}>
+                  {tab.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
       </View>
 
@@ -449,8 +507,43 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
     paddingHorizontal: 16,
-    height: 50,
-    justifyContent: 'center',
+    paddingVertical: 8,
+  },
+  timeFilterContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 8,
+    paddingBottom: 8,
+  },
+  timeFilterLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginRight: 8,
+    fontWeight: '500',
+  },
+  timeFilterTabs: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flex: 1,
+  },
+  timeFilterTab: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    backgroundColor: 'transparent',
+  },
+  activeTimeFilterTab: {
+    backgroundColor: '#FEF3C7',
+  },
+  timeFilterTabText: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '400',
+  },
+  activeTimeFilterTabText: {
+    color: '#92400E',
+    fontWeight: '500',
   },
   filterTabs: {
     flexDirection: 'row',
