@@ -1,122 +1,123 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Share, Alert } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Share, Alert, RefreshControl } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Card, CardContent, CardHeader } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { CreatePostScreen } from './CreatePostScreen';
 import { CommentSection } from './CommentSection';
+import { forumService, ForumPost } from '../services/forumService';
+import { authService } from '../services/auth';
 
 interface ForumScreenProps {
   user: { name: string; email: string } | null;
 }
 
-const forumPostsData = [
-  {
-    id: 1,
-    author: 'Samantha Perera',
-    avatar: 'SP',
-    time: '2h ago',
-    title: 'Amazing visit to Sigiriya!',
-    content: 'Just completed the climb to the top of Sigiriya Rock Fortress. The frescoes are absolutely breathtaking and the view from the top is unforgettable. Highly recommend going early morning to avoid crowds.',
-    image: 'https://images.unsplash.com/photo-1571715268652-3c2247e38d3e?w=400&h=200&fit=crop',
-    likes: 24,
-    comments: 8,
-    tags: ['Sigiriya', 'Ancient Sites', 'Photography'],
-    liked: false,
-    postComments: [
-      {
-        id: '1',
-        author: 'John Doe',
-        avatar: 'JD',
-        text: 'Amazing photos! I visited last year and had a similar experience.',
-        time: '1h ago',
-      },
-      {
-        id: '2',
-        author: 'Jane Smith',
-        avatar: 'JS',
-        text: 'Thanks for the tip about going early morning!',
-        time: '30m ago',
-      }
-    ]
-  },
-  {
-    id: 2,
-    author: 'Rajesh Fernando',
-    avatar: 'RF',
-    time: '5h ago',
-    title: 'Traditional mask making workshop',
-    content: 'Attended a traditional mask making workshop in Ambalangoda today. Learning about the cultural significance of each mask and the intricate craftsmanship involved was fascinating.',
-    likes: 18,
-    comments: 12,
-    tags: ['Traditional Arts', 'Masks', 'Culture'],
-    liked: false,
-    postComments: [
-      {
-        id: '3',
-        author: 'Mike Wilson',
-        avatar: 'MW',
-        text: 'This looks incredible! Where exactly was this workshop held?',
-        time: '2h ago',
-      }
-    ]
-  },
-  {
-    id: 3,
-    author: 'Nisha Silva',
-    avatar: 'NS',
-    time: '1d ago',
-    title: 'Kandy Esala Perahera experience',
-    content: 'The Kandy Esala Perahera was absolutely magical! The procession of elephants, dancers, and drummers through the streets was a spiritual and cultural feast for the senses.',
-    image: 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=400&h=200&fit=crop',
-    likes: 42,
-    comments: 15,
-    tags: ['Festivals', 'Kandy', 'Culture'],
-    liked: true,
-    postComments: [
-      {
-        id: '4',
-        author: 'Sarah Brown',
-        avatar: 'SB',
-        text: 'I was there too! The cultural performances were breathtaking.',
-        time: '12h ago',
-      },
-      {
-        id: '5',
-        author: 'David Lee',
-        avatar: 'DL',
-        text: 'Planning to attend next year. Any tips for getting good spots?',
-        time: '8h ago',
-      }
-    ]
-  }
-];
-
 export function ForumScreen({ user }: ForumScreenProps) {
   const [filter, setFilter] = useState<'all' | 'my-posts' | 'popular'>('all');
   const [isCreatingPost, setIsCreatingPost] = useState(false);
-  const [forumPosts, setForumPosts] = useState(forumPostsData);
-  const [selectedPostId, setSelectedPostId] = useState<number | null>(null);
+  const [forumPosts, setForumPosts] = useState<ForumPost[]>([]);
+  const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastDoc, setLastDoc] = useState<any>(null);
+  const [hasMore, setHasMore] = useState(true);
 
-  const handlePostCreated = (newPost: any) => {
-    setForumPosts([{ ...newPost, liked: false, postComments: [] }, ...forumPosts]);
-    setIsCreatingPost(false);
+  const loadPosts = useCallback(async (refresh = false) => {
+    if (loading) return;
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const options: any = {
+        limit: 10,
+        approvedOnly: true
+      };
+
+      if (filter === 'my-posts' && user) {
+        options.userId = authService.getCurrentUserId();
+      }
+
+      if (!refresh && lastDoc) {
+        options.lastDoc = lastDoc;
+      }
+
+      const result = await forumService.getPosts(options);
+      
+      if (refresh) {
+        setForumPosts(result.posts);
+      } else {
+        setForumPosts(prev => [...prev, ...result.posts]);
+      }
+      
+      setLastDoc(result.lastDoc);
+      setHasMore(result.posts.length === 10);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load posts';
+      setError(errorMessage);
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [filter, user, lastDoc, loading]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    setLastDoc(null);
+    setHasMore(true);
+    loadPosts(true);
+  }, [loadPosts]);
+
+  const handlePostCreated = async (newPost: any) => {
+    try {
+      const postId = await forumService.createPost({
+        title: newPost.title,
+        content: newPost.content,
+        category: 'general',
+        tags: newPost.tags || [],
+        imageUrl: newPost.image || undefined
+      });
+      
+      // Refresh posts to show the new post
+      onRefresh();
+      setIsCreatingPost(false);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create post';
+      Alert.alert('Error', errorMessage);
+    }
   };
 
-  const handleLike = (postId: number) => {
-    setForumPosts(
-      forumPosts.map((post) =>
-        post.id === postId
-          ? { ...post, liked: !post.liked, likes: post.liked ? post.likes - 1 : post.likes + 1 }
-          : post
-      )
-    );
+  const handleLike = async (postId: string) => {
+    try {
+      const result = await forumService.toggleLike(postId);
+      
+      // Update the post in the local state
+      setForumPosts(prev => 
+        prev.map(post => 
+          post.id === postId 
+            ? { 
+                ...post, 
+                likes: result.likesCount,
+                likedBy: result.liked 
+                  ? [...(post.likedBy || []), authService.getCurrentUserId() || '']
+                  : (post.likedBy || []).filter(id => id !== authService.getCurrentUserId())
+              }
+            : post
+        )
+      );
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to like post';
+      Alert.alert('Error', errorMessage);
+    }
   };
 
-  const handleShare = async (post: any) => {
+  const handleShare = async (post: ForumPost) => {
     try {
       await Share.share({
-        message: `Check out this post from the Sri Heritage App forum: "${post.title}" by ${post.author}`,
+        message: `Check out this post from the Sri Heritage App forum: "${post.title}" by ${post.userName}`,
         url: 'https://sriheritage.app',
         title: post.title,
       });
@@ -124,57 +125,99 @@ export function ForumScreen({ user }: ForumScreenProps) {
       Alert.alert('Error', 'There was an issue sharing this post.');
     }
   };
-  
-  const handleAddComment = (postId: number, text: string) => {
-    const newComment = {
-      id: Date.now().toString(),
-      author: user?.name || 'Anonymous',
-      avatar: user?.name?.charAt(0).toUpperCase() || 'A',
-      text,
-      time: 'Just now',
-    };
+
+  const handleAddComment = async (postId: string, text: string) => {
+    try {
+      await forumService.createComment(postId, text);
+      
+      // Update the post's comment count
+      setForumPosts(prev => 
+        prev.map(post => 
+          post.id === postId 
+            ? { ...post, commentsCount: (post.commentsCount || 0) + 1 }
+            : post
+        )
+      );
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to add comment';
+      Alert.alert('Error', errorMessage);
+    }
+  };
+
+  const handleEditComment = async (postId: string, commentId: string, text: string) => {
+    try {
+      await forumService.updateComment(postId, commentId, text);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to edit comment';
+      Alert.alert('Error', errorMessage);
+    }
+  };
+
+  const handleDeleteComment = async (postId: string, commentId: string) => {
+    try {
+      await forumService.deleteComment(postId, commentId);
+      
+      // Update the post's comment count
+      setForumPosts(prev => 
+        prev.map(post => 
+          post.id === postId 
+            ? { ...post, commentsCount: Math.max((post.commentsCount || 0) - 1, 0) }
+            : post
+        )
+      );
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete comment';
+      Alert.alert('Error', errorMessage);
+    }
+  };
+
+  const handleDeletePost = async (postId: string) => {
+    Alert.alert(
+      'Delete Post',
+      'Are you sure you want to delete this post? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive', 
+          onPress: async () => {
+            try {
+              await forumService.deletePost(postId);
+              setForumPosts(prev => prev.filter(post => post.id !== postId));
+            } catch (error) {
+              const errorMessage = error instanceof Error ? error.message : 'Failed to delete post';
+              Alert.alert('Error', errorMessage);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const formatTimeAgo = (timestamp: string) => {
+    const now = new Date();
+    const postTime = new Date(timestamp);
+    const diffInSeconds = Math.floor((now.getTime() - postTime.getTime()) / 1000);
     
-    setForumPosts(
-      forumPosts.map((post) =>
-        post.id === postId
-          ? { 
-              ...post, 
-              postComments: [...(post.postComments || []), newComment],
-              comments: post.comments + 1
-            }
-          : post
-      )
-    );
+    if (diffInSeconds < 60) return 'Just now';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+    return `${Math.floor(diffInSeconds / 86400)}d ago`;
   };
 
-  const handleEditComment = (postId: number, commentId: string, text: string) => {
-    setForumPosts(
-      forumPosts.map((post) =>
-        post.id === postId
-          ? {
-              ...post,
-              postComments: (post.postComments || []).map((comment) =>
-                comment.id === commentId ? { ...comment, text } : comment
-              )
-            }
-          : post
-      )
-    );
+  const isLikedByUser = (post: ForumPost) => {
+    const userId = authService.getCurrentUserId();
+    return post.likedBy?.includes(userId || '') || false;
   };
 
-  const handleDeleteComment = (postId: number, commentId: string) => {
-    setForumPosts(
-      forumPosts.map((post) =>
-        post.id === postId
-          ? {
-              ...post,
-              postComments: (post.postComments || []).filter((comment) => comment.id !== commentId),
-              comments: Math.max(0, post.comments - 1)
-            }
-          : post
-      )
-    );
+  const canEditPost = (post: ForumPost) => {
+    const userId = authService.getCurrentUserId();
+    return post.userId === userId;
   };
+
+  useEffect(() => {
+    onRefresh();
+  }, [filter]);
 
   if (isCreatingPost) {
     return (
@@ -232,72 +275,122 @@ export function ForumScreen({ user }: ForumScreenProps) {
         </View>
       </View>
 
-      {/* Posts */}
-      <ScrollView style={styles.postsContainer} contentContainerStyle={styles.postsContent}>
-        {forumPosts.map((post) => (
-          <Card key={post.id} style={styles.postCard}>
-            <CardHeader style={styles.postHeader}>
-              <View style={styles.authorRow}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{post.avatar}</Text>
-                </View>
-                <View style={styles.authorInfo}>
-                  <Text style={styles.authorName}>{post.author}</Text>
-                  <Text style={styles.postTime}>{post.time}</Text>
-                </View>
-              </View>
-            </CardHeader>
-            
-            <CardContent style={styles.postContent}>
-              <Text style={styles.postTitle}>{post.title}</Text>
-              <Text style={styles.postText}>{post.content}</Text>
-              
-              {post.image && (
-                <View style={styles.imageContainer}>
-                  <Image
-                    source={{ uri: post.image }}
-                    style={styles.postImage}
-                    resizeMode="cover"
-                  />
-                </View>
-              )}
-              
-              <View style={styles.tagsContainer}>
-                {post.tags.map((tag, index) => (
-                  <Badge key={index} variant="secondary" style={styles.tag}>
-                    <Text style={styles.tagText}>#{tag}</Text>
-                  </Badge>
-                ))}
-              </View>
-              
-              <View style={styles.actionsContainer}>
-                <View style={styles.leftActions}>
-                  <TouchableOpacity style={styles.actionButton} onPress={() => handleLike(post.id)}>
-                    <Text style={[styles.heartIcon, post.liked && styles.likedHeartIcon]}>❤️</Text>
-                    <Text style={styles.actionText}>{post.likes}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.actionButton} onPress={() => setSelectedPostId(selectedPostId === post.id ? null : post.id)}>
-                    <Text style={styles.commentIcon}>💬</Text>
-                    <Text style={styles.actionText}>{post.comments}</Text>
-                  </TouchableOpacity>
-                </View>
-                <TouchableOpacity style={styles.actionButton} onPress={() => handleShare(post)}>
-                  <Text style={styles.shareIcon}>📤</Text>
-                  <Text style={styles.actionText}>Share</Text>
-                </TouchableOpacity>
-              </View>
+      {/* Error Message */}
+      {error && (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity onPress={onRefresh} style={styles.retryButton}>
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
-              {selectedPostId === post.id && (
-                <CommentSection
-                  comments={post.postComments || []}
-                  onAddComment={(text) => handleAddComment(post.id, text)}
-                  onEditComment={(commentId, text) => handleEditComment(post.id, commentId, text)}
-                  onDeleteComment={(commentId) => handleDeleteComment(post.id, commentId)}
-                />
-              )}
-            </CardContent>
-          </Card>
-        ))}
+      {/* Posts */}
+      <ScrollView 
+        style={styles.postsContainer} 
+        contentContainerStyle={styles.postsContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+        onScrollEndDrag={() => {
+          if (hasMore && !loading) {
+            loadPosts();
+          }
+        }}
+      >
+        {forumPosts.length === 0 && !loading ? (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No posts yet</Text>
+            <Text style={styles.emptySubtext}>Be the first to share your experience!</Text>
+          </View>
+        ) : (
+          forumPosts.map((post) => (
+            <Card key={post.id} style={styles.postCard}>
+              <CardHeader style={styles.postHeader}>
+                <View style={styles.authorRow}>
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>
+                      {post.userAvatar || post.userName?.charAt(0).toUpperCase() || 'A'}
+                    </Text>
+                  </View>
+                  <View style={styles.authorInfo}>
+                    <Text style={styles.authorName}>{post.userName}</Text>
+                    <Text style={styles.postTime}>{formatTimeAgo(post.createdAt)}</Text>
+                  </View>
+                  {canEditPost(post) && (
+                    <TouchableOpacity 
+                      style={styles.deleteButton}
+                      onPress={() => handleDeletePost(post.id!)}
+                    >
+                      <Text style={styles.deleteButtonText}>🗑️</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </CardHeader>
+              
+              <CardContent style={styles.postContent}>
+                <Text style={styles.postTitle}>{post.title}</Text>
+                <Text style={styles.postText}>{post.content}</Text>
+                
+                {post.imageUrl && (
+                  <View style={styles.imageContainer}>
+                    <Image
+                      source={{ uri: post.imageUrl }}
+                      style={styles.postImage}
+                      resizeMode="cover"
+                    />
+                  </View>
+                )}
+                
+                {post.tags && post.tags.length > 0 && (
+                  <View style={styles.tagsContainer}>
+                    {post.tags.map((tag, index) => (
+                      <Badge key={index} variant="secondary" style={styles.tag}>
+                        <Text style={styles.tagText}>#{tag}</Text>
+                      </Badge>
+                    ))}
+                  </View>
+                )}
+                
+                <View style={styles.actionsContainer}>
+                  <View style={styles.leftActions}>
+                    <TouchableOpacity style={styles.actionButton} onPress={() => handleLike(post.id!)}>
+                      <Ionicons 
+                        name={isLikedByUser(post) ? "heart" : "heart-outline"} 
+                        size={20} 
+                        color={isLikedByUser(post) ? "#EF4444" : "#EF4444"} 
+                      />
+                      <Text style={styles.actionText}>{post.likes || 0}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.actionButton} onPress={() => setSelectedPostId(selectedPostId === post.id ? null : (post.id || null))}>
+                      <Text style={styles.commentIcon}>💬</Text>
+                      <Text style={styles.actionText}>{post.commentsCount || 0}</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <TouchableOpacity style={styles.actionButton} onPress={() => handleShare(post)}>
+                    <Text style={styles.shareIcon}>📤</Text>
+                    <Text style={styles.actionText}>Share</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {selectedPostId === post.id && (
+                  <CommentSection
+                    postId={post.id!}
+                    onAddComment={(text) => handleAddComment(post.id!, text)}
+                    onEditComment={(commentId, text) => handleEditComment(post.id!, commentId, text)}
+                    onDeleteComment={(commentId) => handleDeleteComment(post.id!, commentId)}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          ))
+        )}
+
+        {loading && (
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>Loading posts...</Text>
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -388,6 +481,33 @@ const styles = StyleSheet.create({
   filterIcon: {
     fontSize: 16,
   },
+  errorContainer: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    margin: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  errorText: {
+    color: '#DC2626',
+    fontSize: 14,
+    flex: 1,
+  },
+  retryButton: {
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 4,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   postsContainer: {
     flex: 1,
   },
@@ -432,6 +552,12 @@ const styles = StyleSheet.create({
   postTime: {
     fontSize: 14,
     color: '#6B7280',
+  },
+  deleteButton: {
+    padding: 8,
+  },
+  deleteButtonText: {
+    fontSize: 16,
   },
   postContent: {
     paddingTop: 0,
@@ -488,12 +614,6 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingVertical: 4,
   },
-  heartIcon: {
-    fontSize: 16,
-  },
-  likedHeartIcon: {
-    color: '#EF4444',
-  },
   commentIcon: {
     fontSize: 16,
   },
@@ -501,6 +621,30 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   actionText: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    textAlign: 'center',
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+  loadingText: {
     fontSize: 14,
     color: '#6B7280',
   },
