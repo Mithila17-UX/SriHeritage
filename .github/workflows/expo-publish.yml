@@ -26,10 +26,13 @@ jobs:
       - name: Install Expo CLI
         run: npm install -g @expo/cli
         
-      - name: Login to Expo
-        run: EXPO_TOKEN=${{ secrets.EXPO_TOKEN }} npx expo login --token $EXPO_TOKEN
-        env:
-          CI: true
-        
+            # REMOVE this step:
+      # - name: Login to Expo
+      #   run: EXPO_TOKEN=${{ secrets.EXPO_TOKEN }} npx expo login --token $EXPO_TOKEN
+      #   env:
+      #     CI: true
+
       - name: Deploy to Expo
         run: npx expo publish
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
