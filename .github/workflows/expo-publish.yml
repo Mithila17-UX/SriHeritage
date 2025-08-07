@@ -1,0 +1,41 @@
+name: Expo Publish
+
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency: expo-publish
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Install Expo CLI
+        run: npm install -g @expo/cli
+        
+      - name: Login to Expo
+        run: |
+          echo ${{ secrets.EXPO_PASSWORD }} | expo login --username ${{ secrets.EXPO_USERNAME }} --password-stdin
+        env:
+          EXPO_USERNAME: ${{ secrets.EXPO_USERNAME }}
+          EXPO_PASSWORD: ${{ secrets.EXPO_PASSWORD }}
+          
+      - name: Publish to Expo
+        run: npx expo publish
+        env:
+          EXPO_USERNAME: ${{ secrets.EXPO_USERNAME }}
+          EXPO_PASSWORD: ${{ secrets.EXPO_PASSWORD }}
