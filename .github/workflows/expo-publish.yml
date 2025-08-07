@@ -26,13 +26,16 @@ jobs:
       - name: Install Expo CLI
         run: npm install -g @expo/cli
         
-            # REMOVE this step:
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+        
+      # REMOVE this step:
       # - name: Login to Expo
       #   run: EXPO_TOKEN=${{ secrets.EXPO_TOKEN }} npx expo login --token $EXPO_TOKEN
       #   env:
       #     CI: true
 
-      - name: Deploy to Expo
-        run: npx expo publish
+      - name: Deploy to Expo with EAS
+        run: npx eas update --non-interactive --branch dev
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
