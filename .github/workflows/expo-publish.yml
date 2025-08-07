@@ -25,7 +25,7 @@ jobs:
         run: npm ci
         
       - name: Install Expo CLI
-        run: npm install -g @expo/cli
+        run: npm install -g expo-cli
         
       - name: Login to Expo
         run: |
@@ -35,7 +35,7 @@ jobs:
           EXPO_PASSWORD: ${{ secrets.EXPO_PASSWORD }}
           
       - name: Publish to Expo
-        run: npx expo publish
+        run: expo publish
         env:
           EXPO_USERNAME: ${{ secrets.EXPO_USERNAME }}
           EXPO_PASSWORD: ${{ secrets.EXPO_PASSWORD }}
