@@ -1,65 +1,127 @@
 import React, { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, View, Text } from 'react-native';
 import { LoginScreen } from './components/LoginScreen';
 import { SignupScreen } from './components/SignupScreen';
 import { ForgotPasswordScreen } from './components/ForgotPasswordScreen';
 import { OnboardingFlow } from './components/OnboardingFlow';
 import { MainApp } from './components/MainApp';
-import { AdminPanel } from './components/AdminPanel';
+import { AdminPanelUpdated } from './components/AdminPanelUpdated';
+import { appServices, authService, adminAuthService, adminLogsService } from './services';
+import { User } from 'firebase/auth';
 
 type ScreenType = 'onboarding' | 'login' | 'signup' | 'forgot-password' | 'main' | 'admin';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('login');
-  const [user, setUser] = useState<{ name: string; email: string } | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [initError, setInitError] = useState<string | null>(null);
 
   useEffect(() => {
-    const checkOnboarding = async () => {
+    const initializeApp = async () => {
       try {
+        // Initialize app services
+        await appServices.initialize();
+        
+        // Check onboarding status
         const onboardingCompleted = await AsyncStorage.getItem('sri-heritage-onboarding-completed');
         setHasSeenOnboarding(!!onboardingCompleted);
         
-        if (!onboardingCompleted) {
-          setCurrentScreen('onboarding');
-        }
+        // Set up auth state listener
+        const unsubscribe = authService.onAuthStateChanged((firebaseUser) => {
+          console.log('🔄 Auth state changed:', firebaseUser ? firebaseUser.email : 'null');
+          setUser(firebaseUser);
+          
+          if (firebaseUser) {
+            // Check if this is an admin user using the admin auth service
+            const isUserAdmin = adminAuthService.isAdminEmail(firebaseUser.email || '');
+            
+            console.log('👤 User login check:', {
+              email: firebaseUser.email,
+              isAdmin: isUserAdmin,
+              willNavigateTo: isUserAdmin ? 'admin' : (onboardingCompleted ? 'main' : 'onboarding')
+            });
+            
+            if (isUserAdmin) {
+              console.log('✅ Navigating to admin panel');
+              setIsAdmin(true);
+              setCurrentScreen('admin');
+              
+              // Log admin login (async but don't block UI)
+              adminLogsService.logAdminLogin().catch((error) => {
+                console.error('Failed to log admin login:', error);
+              });
+            } else {
+              console.log('❌ Not admin, navigating to main app');
+              setIsAdmin(false);
+              if (onboardingCompleted) {
+                setCurrentScreen('main');
+              } else {
+                setCurrentScreen('onboarding');
+              }
+            }
+          } else {
+            setIsAdmin(false);
+            if (onboardingCompleted) {
+              setCurrentScreen('login');
+            } else {
+              setCurrentScreen('onboarding');
+            }
+          }
+        });
+        
+        setIsInitializing(false);
+        
+        // Return cleanup function
+        return unsubscribe;
       } catch (error) {
-        console.error('Error checking onboarding status:', error);
+        console.error('Error initializing app:', error);
+        setInitError(error instanceof Error ? error.message : 'Failed to initialize app');
+        setIsInitializing(false);
       }
     };
     
-    checkOnboarding();
+    const cleanup = initializeApp();
+    
+    // Cleanup function
+    return () => {
+      cleanup.then(unsubscribe => {
+        if (unsubscribe) unsubscribe();
+      });
+    };
   }, []);
 
-  const handleLogin = (email: string, password: string) => {
-    // Check if this is an admin login
-    if (email === 'Admin@SriHeritage' && password === 'SriHeritageAd7788') {
-      setUser({ name: 'Administrator', email });
-      setIsAdmin(true);
-      setCurrentScreen('admin');
-    } else {
-      setUser({ name: email.split('@')[0], email });
-      setIsAdmin(false);
-      setCurrentScreen('main');
+  const handleLogin = async (email: string, password: string) => {
+    try {
+      await authService.signIn({ email, password });
+      // Auth state change will handle navigation
+    } catch (error) {
+      console.error('Login failed:', error);
+      throw error; // Let the component handle the error display
     }
   };
 
-  const handleSignup = (name: string, email: string, password: string) => {
-    setUser({ name, email });
-    
-    if (!hasSeenOnboarding) {
-      setCurrentScreen('onboarding');
-    } else {
-      setCurrentScreen('main');
+  const handleSignup = async (name: string, email: string, password: string) => {
+    try {
+      await authService.signUp({ email, password, displayName: name });
+      // Auth state change will handle navigation
+    } catch (error) {
+      console.error('Signup failed:', error);
+      throw error; // Let the component handle the error display
     }
   };
 
-  const handleLogout = () => {
-    setUser(null);
-    setIsAdmin(false);
-    setCurrentScreen('login');
+  const handleLogout = async () => {
+    try {
+      await authService.signOut();
+      // Auth state change will handle navigation
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
   };
 
   const handleOnboardingComplete = async () => {
@@ -84,11 +146,46 @@ export default function App() {
     setCurrentScreen('forgot-password');
   };
 
-  const handleLoginWithForgotPassword = (email: string, password: string) => {
-    handleLogin(email, password);
+  const handleLoginWithForgotPassword = async (email: string, password: string) => {
+    await handleLogin(email, password);
+  };
+
+  const handleForgotPassword = async (email: string) => {
+    try {
+      await authService.sendPasswordResetEmail(email);
+    } catch (error) {
+      console.error('Password reset failed:', error);
+      throw error;
+    }
   };
 
   const renderContent = () => {
+    // Show loading screen while initializing
+    if (isInitializing) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="#8B5CF6" />
+          <Text style={{ marginTop: 16, fontSize: 16, color: '#666' }}>
+            Initializing Sri Heritage App...
+          </Text>
+        </View>
+      );
+    }
+
+    // Show error screen if initialization failed
+    if (initError) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <Text style={{ fontSize: 18, color: '#DC2626', textAlign: 'center', marginBottom: 16 }}>
+            Failed to Initialize App
+          </Text>
+          <Text style={{ fontSize: 14, color: '#666', textAlign: 'center' }}>
+            {initError}
+          </Text>
+        </View>
+      );
+    }
+
     switch (currentScreen) {
       case 'onboarding':
         return <OnboardingFlow onComplete={handleOnboardingComplete} />;
@@ -111,12 +208,16 @@ export default function App() {
         return (
           <ForgotPasswordScreen
             onBackToLogin={handleNavigateToLogin}
+            onForgotPassword={handleForgotPassword}
           />
         );
       case 'main':
-        return <MainApp user={user} onLogout={handleLogout} />;
+        return <MainApp user={user ? { 
+          name: user.displayName || user.email?.split('@')[0] || 'User', 
+          email: user.email || '' 
+        } : null} onLogout={handleLogout} />;
       case 'admin':
-        return <AdminPanel onLogout={handleLogout} />;
+        return <AdminPanelUpdated onLogout={handleLogout} />;
       default:
         return null;
     }
