@@ -1,10 +1,13 @@
 /**
  * Distance Calculator Service
  * Calculates distances between coordinates and provides district center coordinates
+ * Now supports both direct distance (Haversine) and road distance (OpenStreetMap + OSRM)
  */
 
+import { routingServiceOSM, Coordinates as RoutingCoordinates } from './routingServiceOSM';
+
 // Sri Lankan District Centers Coordinates
-export const DISTRICT_CENTERS = {
+export const DISTRICT_CENTERS: Record<string, { latitude: number; longitude: number; name: string }> = {
   // Western Province
   'Colombo': { latitude: 6.9271, longitude: 79.8612, name: 'Colombo City' },
   'Gampaha': { latitude: 7.0873, longitude: 79.9990, name: 'Gampaha Town' },
@@ -83,6 +86,86 @@ export class DistanceCalculatorService {
     const distance = R * c;
     return Math.round(distance * 10) / 10; // Round to 1 decimal place
   }
+
+  /**
+   * Calculate road distance between two coordinates using Google Directions API
+   * Prefers A-grade and B-grade roads in Sri Lanka
+   * Returns distance in kilometers
+   */
+  static async calculateRoadDistance(
+    coord1: Coordinates,
+    coord2: Coordinates,
+    preferMainRoads: boolean = true
+  ): Promise<number | null> {
+    try {
+      if (!routingServiceOSM.isAvailable()) {
+        console.warn('⚠️ Routing service not available, falling back to direct distance');
+        return this.calculateDistance(coord1, coord2);
+      }
+
+      const roadDistance = await routingServiceOSM.getRoadDistance(
+        { latitude: coord1.latitude, longitude: coord1.longitude },
+        { latitude: coord2.latitude, longitude: coord2.longitude },
+        { mode: preferMainRoads ? 'driving' : 'driving', fallbackToStraightLine: true }
+      );
+
+      if (roadDistance !== null) {
+        return Math.round(roadDistance * 10) / 10; // Round to 1 decimal place
+      }
+
+      // Fallback to direct distance if routing fails
+      console.warn('⚠️ Road distance calculation failed, falling back to direct distance');
+      return this.calculateDistance(coord1, coord2);
+
+    } catch (error) {
+      console.error('❌ Error calculating road distance:', error);
+      // Fallback to direct distance
+      return this.calculateDistance(coord1, coord2);
+    }
+  }
+
+  /**
+   * Calculate distance from user location to heritage site with road routing
+   * Returns both direct and road distances for comparison
+   */
+  static async calculateDistanceFromUserLocation(
+    userLocation: Coordinates,
+    siteCoordinates: Coordinates,
+    useRoadDistance: boolean = true
+  ): Promise<{
+    directDistance: number;
+    roadDistance: number | null;
+    estimatedTime: number | null; // in minutes
+    recommendedDistance: number;
+  }> {
+    const directDistance = this.calculateDistance(userLocation, siteCoordinates);
+    let roadDistance: number | null = null;
+    let estimatedTime: number | null = null;
+
+    if (useRoadDistance) {
+      try {
+        const route = await routingServiceOSM.getRoute(
+          { latitude: userLocation.latitude, longitude: userLocation.longitude },
+          { latitude: siteCoordinates.latitude, longitude: siteCoordinates.longitude },
+          { mode: 'driving', fallbackToStraightLine: true }
+        );
+
+        if (route) {
+          roadDistance = Math.round(route.distance * 10) / 10;
+          estimatedTime = Math.round(route.duration);
+        }
+      } catch (error) {
+        console.error('❌ Error getting route information:', error);
+      }
+    }
+
+    return {
+      directDistance,
+      roadDistance,
+      estimatedTime,
+      recommendedDistance: roadDistance || directDistance
+    };
+  }
   
   /**
    * Convert degrees to radians
@@ -122,23 +205,41 @@ export class DistanceCalculatorService {
   
   /**
    * Calculate distance from district center to heritage site
+   * Now supports both direct and road distance calculation
    */
-  static calculateDistanceFromDistrict(
+  static async calculateDistanceFromDistrict(
     districtName: string,
-    siteCoordinates: Coordinates
-  ): { distance: number; districtCenter: string } | null {
+    siteCoordinates: Coordinates,
+    useRoadDistance: boolean = true
+  ): Promise<{ distance: number; districtCenter: string; isRoadDistance: boolean } | null> {
     const districtCenter = this.getDistrictCenter(districtName);
     
     if (!districtCenter) {
       console.warn(`District center not found for: ${districtName}`);
       return null;
     }
-    
-    const distance = this.calculateDistance(districtCenter, siteCoordinates);
+
+    let distance: number;
+    let isRoadDistance = false;
+
+    if (useRoadDistance) {
+      const roadDistance = await this.calculateRoadDistance(districtCenter, siteCoordinates);
+      if (roadDistance !== null) {
+        distance = roadDistance;
+        isRoadDistance = true;
+      } else {
+        distance = this.calculateDistance(districtCenter, siteCoordinates);
+        isRoadDistance = false;
+      }
+    } else {
+      distance = this.calculateDistance(districtCenter, siteCoordinates);
+      isRoadDistance = false;
+    }
     
     return {
       distance,
-      districtCenter: districtCenter.name
+      districtCenter: districtCenter.name,
+      isRoadDistance
     };
   }
   
@@ -182,8 +283,50 @@ export class DistanceCalculatorService {
   
   /**
    * Auto-calculate and format distance string
+   * Now supports road distance calculation with fallback to direct distance
    */
-  static autoCalculateDistance(
+  static async autoCalculateDistance(
+    districtName: string,
+    latitude: number,
+    longitude: number,
+    useRoadDistance: boolean = true
+  ): Promise<string> {
+    try {
+      // Validate coordinates
+      if (!this.validateCoordinates(latitude, longitude)) {
+        console.warn('Coordinates appear to be outside Sri Lanka bounds');
+      }
+      
+      const result = await this.calculateDistanceFromDistrict(
+        districtName,
+        { latitude, longitude },
+        useRoadDistance
+      );
+      
+      if (!result) {
+        return `Distance from ${districtName}`;
+      }
+      
+      const distanceText = this.formatDistance(result.distance, result.districtCenter);
+      
+      // Add indicator if it's road distance vs direct distance
+      if (result.isRoadDistance) {
+        return `${distanceText} via road`;
+      } else {
+        return distanceText;
+      }
+      
+    } catch (error) {
+      console.error('Error calculating distance:', error);
+      return `Distance from ${districtName}`;
+    }
+  }
+
+  /**
+   * Legacy synchronous version for backward compatibility
+   * Uses direct distance calculation only
+   */
+  static autoCalculateDistanceSync(
     districtName: string,
     latitude: number,
     longitude: number
@@ -194,16 +337,15 @@ export class DistanceCalculatorService {
         console.warn('Coordinates appear to be outside Sri Lanka bounds');
       }
       
-      const result = this.calculateDistanceFromDistrict(
-        districtName,
-        { latitude, longitude }
-      );
+      const districtCenter = this.getDistrictCenter(districtName);
       
-      if (!result) {
+      if (!districtCenter) {
         return `Distance from ${districtName}`;
       }
       
-      return this.formatDistance(result.distance, result.districtCenter);
+      const distance = this.calculateDistance(districtCenter, { latitude, longitude });
+      
+      return this.formatDistance(distance, districtCenter.name);
       
     } catch (error) {
       console.error('Error calculating distance:', error);

@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, FlatList, Modal } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -7,9 +8,10 @@ import { Badge } from './ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
-import MapView, { Marker, PROVIDER_GOOGLE, Region, Callout, Polyline } from 'react-native-maps';
 import { databaseService, syncService, authService, Site } from '../services';
 import { getSitesFromFirestore, FirestoreSite } from '../services/firebase';
+import { routingServiceOSM } from '../services/routingServiceOSM';
+import { LeafletPageService } from '../services/leafletPage';
 // Note: Replace lucide-react icons with React Native compatible icons
 // import { MapPin, Navigation, Star, Search, Filter, Heart, Eye, SortAsc } from 'lucide-react';
 // import { ImageWithFallback } from './figma/ImageWithFallback';
@@ -22,6 +24,22 @@ interface AllPlacesScreenProps {
 interface RouteCoordinates {
   latitude: number;
   longitude: number;
+}
+
+interface MapConfig {
+  userLocation?: {
+    latitude: number;
+    longitude: number;
+  };
+  destination: {
+    latitude: number;
+    longitude: number;
+    name: string;
+    description?: string;
+  };
+  routeCoordinates: RouteCoordinates[];
+  showFallbackMessage: boolean;
+  fallbackMessage?: string;
 }
 
 const defaultPlaces: any[] = [];
@@ -52,12 +70,8 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
   const [locationPermission, setLocationPermission] = useState<boolean>(false);
   const [nearbySites, setNearbySites] = useState<FirestoreSite[]>([]);
   const [routeCoordinates, setRouteCoordinates] = useState<RouteCoordinates[]>([]);
-  const [mapRegion, setMapRegion] = useState<Region>({
-    latitude: 7.8731, // Sri Lanka center
-    longitude: 80.7718,
-    latitudeDelta: 0.5,
-    longitudeDelta: 0.5,
-  });
+  const [mapConfig, setMapConfig] = useState<MapConfig | null>(null);
+  const [isGettingDirections, setIsGettingDirections] = useState<boolean>(false);
 
   // Initialize and load data - bypassing SQLite due to corruption
   useEffect(() => {
@@ -247,9 +261,33 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
     return R * c;
   };
 
-  // Generate route coordinates (simplified - in real app you'd use Google Directions API)
-  const generateRouteCoordinates = (startLat: number, startLon: number, endLat: number, endLon: number): RouteCoordinates[] => {
-    // Create a simple straight line route (in production, use Google Directions API)
+  // Generate route coordinates using OSRM (OpenStreetMap routing)
+  const generateRouteCoordinates = async (startLat: number, startLon: number, endLat: number, endLon: number): Promise<{ coordinates: RouteCoordinates[]; isFallback: boolean; }> => {
+    try {
+      console.log('🗺️ AllPlaces: Getting route from OSRM (OpenStreetMap)...');
+      const route = await routingServiceOSM.getRoute(
+        { latitude: startLat, longitude: startLon },
+        { latitude: endLat, longitude: endLon },
+        { mode: 'driving', fallbackToStraightLine: true }
+      );
+
+      if (route && route.coordinates.length > 0) {
+        console.log('✅ AllPlaces: Route obtained from OSM with', route.coordinates.length, 'points');
+        return {
+          coordinates: route.coordinates.map((coord: any) => ({
+            latitude: coord.latitude,
+            longitude: coord.longitude
+          })),
+          isFallback: route.isFallback || false
+        };
+      } else {
+        console.warn('⚠️ AllPlaces: No route found from OSRM, using fallback');
+      }
+    } catch (error) {
+      console.error('❌ AllPlaces: Error getting route from OSRM:', error);
+    }
+
+    // Fallback: Create a simple straight line route
     const steps = 10;
     const coordinates: RouteCoordinates[] = [];
     
@@ -261,7 +299,8 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
       });
     }
     
-    return coordinates;
+    console.log('📍 AllPlaces: Using fallback straight-line route with', coordinates.length, 'points');
+    return { coordinates, isFallback: true };
   };
 
   // Load nearby sites from Firestore
@@ -398,10 +437,18 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
     let sorted;
     switch (sortBy) {
       case 'proximity':
-        sorted = filtered.sort((a, b) => parseFloat(a.distance) - parseFloat(b.distance));
+        sorted = filtered.sort((a, b) => {
+          const distanceA = parseFloat(a.distance || '0');
+          const distanceB = parseFloat(b.distance || '0');
+          return distanceA - distanceB;
+        });
         break;
       case 'rating':
-        sorted = filtered.sort((a, b) => b.rating - a.rating);
+        sorted = filtered.sort((a, b) => {
+          const ratingA = a.rating || 0;
+          const ratingB = b.rating || 0;
+          return ratingB - ratingA;
+        });
         break;
       case 'name':
         sorted = filtered.sort((a, b) => a.name.localeCompare(b.name));
@@ -433,48 +480,37 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
     // Load nearby sites
     await loadNearbySites();
 
-    // Generate route coordinates
-    const route = generateRouteCoordinates(
+    // Generate route coordinates using OSRM
+    const routeResult = await generateRouteCoordinates(
       userLocation.coords.latitude,
       userLocation.coords.longitude,
       placeLat,
       placeLon
     );
-    setRouteCoordinates(route);
+    setRouteCoordinates(routeResult.coordinates);
 
-    // Calculate the bounds to include both user location and destination
-    const userLat = userLocation.coords.latitude;
-    const userLon = userLocation.coords.longitude;
-
-    // Find the minimum and maximum coordinates
-    const minLat = Math.min(userLat, placeLat);
-    const maxLat = Math.max(userLat, placeLat);
-    const minLon = Math.min(userLon, placeLon);
-    const maxLon = Math.max(userLon, placeLon);
-
-    // Calculate the center point
-    const centerLat = (minLat + maxLat) / 2;
-    const centerLon = (minLon + maxLon) / 2;
-
-    // Calculate the span with padding
-    const latDelta = (maxLat - minLat) * 1.5; // 50% padding
-    const lonDelta = (maxLon - minLon) * 1.5; // 50% padding
-
-    // Ensure minimum zoom level for better visibility
-    const minDelta = 0.01; // Minimum zoom level
-    const finalLatDelta = Math.max(latDelta, minDelta);
-    const finalLonDelta = Math.max(lonDelta, minDelta);
-
-    // Update map region to show the entire route
-    const newRegion: Region = {
-      latitude: centerLat,
-      longitude: centerLon,
-      latitudeDelta: finalLatDelta,
-      longitudeDelta: finalLonDelta,
+    // Prepare map configuration for WebView
+    const config: MapConfig = {
+      userLocation: {
+        latitude: userLocation.coords.latitude,
+        longitude: userLocation.coords.longitude,
+      },
+      destination: {
+        latitude: placeLat,
+        longitude: placeLon,
+        name: selectedPlace.name,
+        description: selectedPlace.location,
+      },
+      routeCoordinates: routeResult.coordinates,
+      showFallbackMessage: routeResult.isFallback,
+      fallbackMessage: routeResult.isFallback 
+        ? "OSRM routing unavailable. Showing direct route." 
+        : undefined,
     };
 
-    setMapRegion(newRegion);
+    setMapConfig(config);
     setShowMapModal(true);
+    console.log('✅ AllPlaces: Map modal opened with OpenStreetMap directions');
   };
 
   // Check if we need to reload data (in case of navigation issues)
@@ -526,74 +562,43 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
             </View>
           </View>
 
-          {/* Map View */}
-          <MapView
-            style={styles.fullScreenMap}
-            provider={PROVIDER_GOOGLE}
-            region={mapRegion}
-            showsUserLocation={true}
-            showsMyLocationButton={true}
-            showsCompass={true}
-            showsScale={true}
-            onRegionChangeComplete={setMapRegion}
-          >
-            {/* User Location Marker */}
-            {userLocation && (
-              <Marker
-                coordinate={{
-                  latitude: userLocation.coords.latitude,
-                  longitude: userLocation.coords.longitude,
-                }}
-                title="Your Location"
-                description="You are here"
-                pinColor="#10B981"
-              />
-            )}
-
-            {/* Destination Marker */}
-            {selectedPlace?.latitude && selectedPlace?.longitude && (
-              <Marker
-                coordinate={{
-                  latitude: selectedPlace.latitude,
-                  longitude: selectedPlace.longitude,
-                }}
-                title={selectedPlace.name}
-                description={selectedPlace.location}
-                pinColor="#EF4444"
-              />
-            )}
-
-            {/* Nearby Sites Markers */}
-            {nearbySites.map((nearbySite) => {
-              const latitude = nearbySite.latitude || nearbySite.coordinates?.latitude;
-              const longitude = nearbySite.longitude || nearbySite.coordinates?.longitude;
-              
-              if (!latitude || !longitude) return null;
-
-              return (
-                <Marker
-                  key={nearbySite.id}
-                  coordinate={{
-                    latitude,
-                    longitude,
-                  }}
-                  title={nearbySite.name}
-                  description={nearbySite.location}
-                  pinColor="#3B82F6"
-                />
-              );
-            })}
-
-            {/* Route Polyline */}
-            {routeCoordinates.length > 0 && (
-              <Polyline
-                coordinates={routeCoordinates}
-                strokeColor="#2563EB"
-                strokeWidth={3}
-                lineDashPattern={[1]}
-              />
-            )}
-          </MapView>
+          {/* WebView with Leaflet Map */}
+          {mapConfig && (
+            <WebView
+              style={styles.fullScreenMap}
+              source={{ 
+                html: LeafletPageService.generateMapHTML(mapConfig)
+              }}
+              javaScriptEnabled={true}
+              allowFileAccess={false}
+              allowFileAccessFromFileURLs={false}
+              allowUniversalAccessFromFileURLs={false}
+              mixedContentMode="never"
+              onError={(syntheticEvent) => {
+                const { nativeEvent } = syntheticEvent;
+                console.error('AllPlaces WebView error:', nativeEvent);
+                Alert.alert('Map Error', 'Failed to load map. Please try again.');
+              }}
+              onHttpError={(syntheticEvent) => {
+                const { nativeEvent } = syntheticEvent;
+                console.error('AllPlaces WebView HTTP error:', nativeEvent);
+              }}
+              onMessage={(event) => {
+                try {
+                  const data = JSON.parse(event.nativeEvent.data);
+                  console.log('AllPlaces: Message from WebView:', data);
+                } catch (error) {
+                  console.log('AllPlaces: WebView message:', event.nativeEvent.data);
+                }
+              }}
+              startInLoadingState={true}
+              renderLoading={() => (
+                <View style={styles.mapLoadingContainer}>
+                  <Text style={styles.mapLoadingText}>Loading map...</Text>
+                </View>
+              )}
+            />
+          )}
         </View>
       </Modal>
 
@@ -1405,5 +1410,16 @@ const styles = StyleSheet.create({
   },
   fullScreenMap: {
     flex: 1,
+  },
+  mapLoadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+  },
+  mapLoadingText: {
+    fontSize: 16,
+    color: '#6B7280',
+    fontWeight: '500',
   },
 });
