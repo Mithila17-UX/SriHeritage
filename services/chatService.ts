@@ -32,7 +32,8 @@ class ChatService {
     if (this.isInitialized) return;
     
     try {
-      await secureConfigService.initialize();
+      // Force clear and reinitialize to ensure we use the latest API key
+      await secureConfigService.clearAndReinitialize();
       this.isInitialized = true;
       console.log('✅ Chat service initialized with secure config');
     } catch (error) {
@@ -50,6 +51,9 @@ class ChatService {
       const apiKey = await secureConfigService.getApiKey();
       const model = await secureConfigService.getModel();
       const baseUrl = await secureConfigService.getBaseUrl();
+
+      console.log('🔑 Using API key (first 20 chars):', apiKey.substring(0, 20) + '...');
+      console.log('🧠 Using model:', model);
 
       if (!apiKey) {
         throw new Error('API key not available');

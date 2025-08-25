@@ -23,19 +23,15 @@ class SecureConfigService {
    */
   async initialize(): Promise<void> {
     try {
-      // Try to get existing config from secure store
-      let config = await this.getConfig();
+      // Force refresh - clear any cached config and use the latest default
+      await this.saveConfig(this.defaultConfig);
       
-      if (!config) {
-        // If no config exists, use default and save it
-        await this.saveConfig(this.defaultConfig);
-        config = this.defaultConfig;
-      }
-
       // Also create backup file in document directory
-      await this.createBackupFile(config);
+      await this.createBackupFile(this.defaultConfig);
       
-      console.log('✅ Secure config initialized successfully');
+      console.log('✅ Secure config initialized successfully with latest API key');
+      console.log('🔑 Using API key:', this.defaultConfig.apiKey.substring(0, 20) + '...');
+      console.log('🧠 Using model:', this.defaultConfig.model);
     } catch (error) {
       console.error('❌ Failed to initialize secure config:', error);
       throw new Error('Failed to initialize secure configuration');
@@ -179,6 +175,23 @@ BASE_URL=${config.baseUrl}
     } catch (error) {
       console.error('❌ Failed to get config from file:', error);
       return null;
+    }
+  }
+
+  /**
+   * Clear cached configuration and reinitialize
+   */
+  async clearAndReinitialize(): Promise<void> {
+    try {
+      // Clear from secure store
+      await SecureStore.deleteItemAsync(this.CONFIG_KEY);
+      console.log('✅ Cleared cached configuration');
+      
+      // Reinitialize with fresh config
+      await this.initialize();
+    } catch (error) {
+      console.error('❌ Failed to clear and reinitialize:', error);
+      throw new Error('Failed to clear configuration');
     }
   }
 
