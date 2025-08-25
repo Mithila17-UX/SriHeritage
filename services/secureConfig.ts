@@ -13,7 +13,7 @@ class SecureConfigService {
   
   // Default configuration
   private readonly defaultConfig: AIConfig = {
-    apiKey: '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',
+    apiKey: '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',
     model: 'moonshotai/kimi-k2:free',
     baseUrl: 'https://openrouter.ai/api/v1'
   };
