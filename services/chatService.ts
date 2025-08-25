@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system';
+import { secureConfigService } from './secureConfig';
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
@@ -26,49 +26,45 @@ export interface ChatResponse {
 }
 
 class ChatService {
-  private apiKey: string | null = null;
-  private readonly baseUrl = 'https://openrouter.ai/api/v1';
-  private readonly model = 'deepseek/deepseek-r1-0528:free';
+  private isInitialized = false;
 
   async initialize(): Promise<void> {
+    if (this.isInitialized) return;
+    
     try {
-      const apiKeyContent = await FileSystem.readAsStringAsync(
-        FileSystem.documentDirectory + 'DeepSeekR1ChatBotAPIKey.txt'
-      );
-      
-      // Extract API key from text content
-      const apiKeyMatch = apiKeyContent.match(/API_KEY=([^\s]+)/);
-      if (apiKeyMatch) {
-        this.apiKey = apiKeyMatch[1];
-      } else {
-        throw new Error('API key not found in file');
-      }
+      await secureConfigService.initialize();
+      this.isInitialized = true;
+      console.log('✅ Chat service initialized with secure config');
     } catch (error) {
-      console.error('Failed to read API key:', error);
+      console.error('❌ Failed to initialize chat service:', error);
       throw new Error('Failed to initialize chat service');
     }
   }
 
   async sendMessage(messages: ChatMessage[]): Promise<string> {
-    if (!this.apiKey) {
+    if (!this.isInitialized) {
       await this.initialize();
     }
 
-    if (!this.apiKey) {
-      throw new Error('API key not available');
-    }
-
     try {
-      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      const apiKey = await secureConfigService.getApiKey();
+      const model = await secureConfigService.getModel();
+      const baseUrl = await secureConfigService.getBaseUrl();
+
+      if (!apiKey) {
+        throw new Error('API key not available');
+      }
+
+      const response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
+          'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://yourdomain.com',
+          'HTTP-Referer': 'https://sriheritage.app',
           'X-Title': 'Sri Heritage AI Guide'
         },
         body: JSON.stringify({
-          model: this.model,
+          model: model,
           messages: messages,
           max_tokens: 1000,
           temperature: 0.7
@@ -77,8 +73,18 @@ class ChatService {
 
       if (!response.ok) {
         const errorData = await response.text();
-        console.error('API Error:', response.status, errorData);
-        throw new Error(`API request failed: ${response.status}`);
+        console.error('❌ API Error:', response.status, errorData);
+        
+        // Provide more specific error messages
+        if (response.status === 401) {
+          throw new Error('Invalid API key. Please check your configuration.');
+        } else if (response.status === 429) {
+          throw new Error('Rate limit exceeded. Please try again later.');
+        } else if (response.status === 500) {
+          throw new Error('Server error. Please try again later.');
+        } else {
+          throw new Error(`API request failed: ${response.status}`);
+        }
       }
 
       const data: ChatResponse = await response.json();
@@ -89,7 +95,7 @@ class ChatService {
         throw new Error('No response from AI model');
       }
     } catch (error) {
-      console.error('Chat API error:', error);
+      console.error('❌ Chat API error:', error);
       throw error;
     }
   }
