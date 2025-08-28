@@ -267,7 +267,11 @@ export function AdminPanelGalleryModal({
                   placeholder="Enter image URL manually"
                   value={newGalleryImage}
                   onChangeText={setNewGalleryImage}
-                  style={[styles.input, !validateImageUrl(newGalleryImage) && newGalleryImage ? styles.inputError : null]}
+                  style={
+                    (!validateImageUrl(newGalleryImage) && newGalleryImage) 
+                      ? {...styles.input, ...styles.inputError} 
+                      : styles.input
+                  }
                 />
               </View>
               
@@ -370,9 +374,8 @@ export function AdminPanelGalleryModal({
 
       <ImagePickerModal
         visible={showImagePicker}
-        onClose={() => setShowImagePicker(false)}
+        onCancel={() => setShowImagePicker(false)}
         onImageSelected={handleImageSelected}
-        title="Add Gallery Image"
       />
     </Modal>
   );

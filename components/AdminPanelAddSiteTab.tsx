@@ -189,7 +189,7 @@ export function AdminPanelAddSiteTab({ onSiteAdded }: AdminPanelAddSiteTabProps)
     
     setIsCalculatingDistance(true);
     try {
-      const calculatedDistance = DistanceCalculatorService.autoCalculateDistance(
+      const calculatedDistance = await DistanceCalculatorService.autoCalculateDistance(
         district,
         coordinates.latitude,
         coordinates.longitude
@@ -312,8 +312,8 @@ export function AdminPanelAddSiteTab({ onSiteAdded }: AdminPanelAddSiteTabProps)
                 placeholder="Will auto-calculate from district center"
                 value={formData.distance}
                 onChangeText={(text) => setFormData({ ...formData, distance: text })}
-                style={[styles.input, isCalculatingDistance && styles.inputCalculating]}
-                editable={!isCalculatingDistance}
+                style={isCalculatingDistance ? {...styles.input, ...styles.inputCalculating} : styles.input}
+                disabled={isCalculatingDistance}
               />
               <Text style={styles.helpText}>
                 💡 Auto-calculated from district center when coordinates are set
@@ -443,7 +443,11 @@ export function AdminPanelAddSiteTab({ onSiteAdded }: AdminPanelAddSiteTabProps)
                 placeholder="Enter image URL manually"
                 value={formData.image}
                 onChangeText={(text) => setFormData({ ...formData, image: text })}
-                style={[styles.input, !validateImageUrl(formData.image) && formData.image ? styles.inputError : null]}
+                style={
+                  (!validateImageUrl(formData.image) && formData.image) 
+                    ? {...styles.input, ...styles.inputError} 
+                    : styles.input
+                }
               />
             </View>
             
@@ -484,7 +488,7 @@ export function AdminPanelAddSiteTab({ onSiteAdded }: AdminPanelAddSiteTabProps)
           <Button
             onPress={handleAddSite}
             disabled={isSubmitting}
-            style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
+            style={isSubmitting ? {...styles.submitButton, ...styles.submitButtonDisabled} : styles.submitButton}
           >
             {isSubmitting ? 'Adding Site...' : 'Add Heritage Site'}
           </Button>
@@ -493,9 +497,8 @@ export function AdminPanelAddSiteTab({ onSiteAdded }: AdminPanelAddSiteTabProps)
 
       <ImagePickerModal
         visible={showImagePicker}
-        onClose={() => setShowImagePicker(false)}
+        onCancel={() => setShowImagePicker(false)}
         onImageSelected={handleImageSelected}
-        title="Select Main Image"
       />
     </ScrollView>
   );

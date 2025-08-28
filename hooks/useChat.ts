@@ -1,6 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { chatService, ChatMessage } from '../services/chatService';
-import { copyApiKeyFile } from '../services/fileUtils';
+import { geminiChatService, ChatMessage } from '../services/geminiChatService';
 import { chatHistoryService, ChatSession, ChatSessionSummary } from '../services/chatHistoryService';
 
 export interface ChatMessageUI {
@@ -76,11 +75,11 @@ What aspect of Sri Lankan heritage would you like to explore? I'm here to provid
     if (isInitialized.current) return;
     
     try {
-      await copyApiKeyFile();
-      await chatService.initialize();
+      await geminiChatService.initialize();
       isInitialized.current = true;
+      console.log('✅ Chat hook initialized successfully with Gemini');
     } catch (err) {
-      console.error('Failed to initialize chat:', err);
+      console.error('❌ Failed to initialize chat:', err);
       setError('Failed to initialize chat service');
     }
   }, []);
@@ -133,7 +132,7 @@ What aspect of Sri Lankan heritage would you like to explore? I'm here to provid
       conversationHistory.current.push(userChatMessage);
 
       // Get AI response
-      const aiResponse = await chatService.sendMessageWithContext(
+      const aiResponse = await geminiChatService.sendMessageWithContext(
         userMessage,
         conversationHistory.current
       );
