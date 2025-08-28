@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, Image } from 'react-native';
 import { Input } from './ui/input';
+import { Textarea } from './ui/textarea';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
@@ -142,7 +143,7 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
     
     setIsCalculatingDistance(true);
     try {
-      const calculatedDistance = DistanceCalculatorService.autoCalculateDistance(
+      const calculatedDistance = await DistanceCalculatorService.autoCalculateDistance(
         district.trim(),
         lat,
         lon
@@ -186,7 +187,7 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
     
     setIsCalculatingDistance(true);
     try {
-      const calculatedDistance = DistanceCalculatorService.autoCalculateDistance(
+      const calculatedDistance = await DistanceCalculatorService.autoCalculateDistance(
         district.trim(),
         lat,
         lon
@@ -360,8 +361,8 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
               value={formData.distance}
               onChangeText={(text) => setFormData(prev => ({ ...prev, distance: text }))}
               placeholder="e.g., 2.5 km from city center"
-              style={[styles.input, isCalculatingDistance && styles.inputCalculating]}
-              editable={!isCalculatingDistance}
+              style={isCalculatingDistance ? {...styles.input, ...styles.inputCalculating} : styles.input}
+              disabled={isCalculatingDistance}
             />
             <Text style={styles.helpText}>
               💡 Distance is automatically calculated from district center when coordinates are entered
@@ -375,7 +376,7 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
               value={formData.rating}
               onChangeText={(text) => setFormData(prev => ({ ...prev, rating: text }))}
               placeholder="Enter rating"
-              keyboardType="decimal-pad"
+              keyboardType="numeric"
               style={styles.input}
             />
           </View>
@@ -398,7 +399,11 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
                 value={formData.image}
                 onChangeText={(text) => setFormData(prev => ({ ...prev, image: text }))}
                 placeholder="Enter image URL manually"
-                style={[styles.input, !validateImageUrl(formData.image) && formData.image ? styles.inputError : null]}
+                style={
+                  (!validateImageUrl(formData.image) && formData.image) 
+                    ? {...styles.input, ...styles.inputError} 
+                    : styles.input
+                }
               />
             </View>
             
@@ -438,13 +443,11 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
           {/* Description */}
           <View style={styles.formGroup}>
             <Label style={styles.label}>Description</Label>
-            <Input
+            <Textarea
               value={formData.description}
               onChangeText={(text) => setFormData(prev => ({ ...prev, description: text }))}
               placeholder="Enter site description"
-              multiline
-              numberOfLines={4}
-              style={[styles.input, styles.textArea]}
+              style={{...styles.input, ...styles.textArea}}
             />
           </View>
 
@@ -478,7 +481,7 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
                 value={formData.latitude}
                 onChangeText={(text) => setFormData(prev => ({ ...prev, latitude: text }))}
                 placeholder="e.g., 7.2906"
-                keyboardType="decimal-pad"
+                keyboardType="numeric"
                 style={styles.input}
               />
             </View>
@@ -489,7 +492,7 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
                 value={formData.longitude}
                 onChangeText={(text) => setFormData(prev => ({ ...prev, longitude: text }))}
                 placeholder="e.g., 80.6337"
-                keyboardType="decimal-pad"
+                keyboardType="numeric"
                 style={styles.input}
               />
             </View>
@@ -523,7 +526,7 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
         {/* Image Picker Modal */}
         <ImagePickerModal
           visible={showImagePicker}
-          onClose={() => setShowImagePicker(false)}
+          onCancel={() => setShowImagePicker(false)}
           onImageSelected={handleImageSelected}
         />
       </View>
