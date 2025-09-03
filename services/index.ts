@@ -5,6 +5,7 @@ export { syncService } from './sync';
 export { storageService } from './storage';
 export { adminLogsService } from './adminLogs';
 export { adminAuthService } from './adminAuth';
+export { reviewService } from './reviewService';
 
 // Export types
 export type { Site, FavoriteSite, VisitedSite } from './database';
@@ -12,6 +13,7 @@ export type { UserProfile, SignupData, LoginData } from './auth';
 export type { ForumPost, ForumComment } from './sync';
 export type { ImageUploadResult } from './storage';
 export type { AdminLogEntry } from './adminLogs';
+export type { Review, SiteRatingStats } from './reviewService';
 
 // Initialize database on app start
 import { databaseService } from './database';

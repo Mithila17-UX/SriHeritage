@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, Share, Modal } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, Share, Modal, TextInput } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from './ui/button';
@@ -17,6 +17,8 @@ import { getSitesFromFirestore, FirestoreSite } from '../services/firebase';
 import { DistanceCalculatorService } from '../services/distanceCalculator';
 import { routingServiceOSM } from '../services/routingServiceOSM';
 import { LeafletPageService } from '../services/leafletPage';
+import { reviewService, Review as FirestoreReview, SiteRatingStats } from '../services/reviewService';
+import { authService } from '../services/auth';
 
 interface SiteInformationPageProps {
   site: {
@@ -173,6 +175,17 @@ export function SiteInformationPage({
   const [mapConfig, setMapConfig] = useState<MapConfig | null>(null);
   const [isGettingDirections, setIsGettingDirections] = useState(false);
 
+  // New state for reviews and ratings
+  const [firestoreReviews, setFirestoreReviews] = useState<FirestoreReview[]>([]);
+  const [siteRatingStats, setSiteRatingStats] = useState<SiteRatingStats | null>(null);
+  const [userExistingReview, setUserExistingReview] = useState<FirestoreReview | null>(null);
+  const [isLoadingReviews, setIsLoadingReviews] = useState(false);
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const [isEditingReview, setIsEditingReview] = useState(false);
+
+  // Ref to prevent unnecessary re-renders during form interactions
+  const isFormInteractionRef = useRef(false);
+
   // Debug logging for site data
   useEffect(() => {
     console.log('🔍 SiteInformationPage - Site data received:', {
@@ -193,9 +206,9 @@ export function SiteInformationPage({
     });
   }, [site]);
 
-  // Use the actual site rating from admin panel instead of calculating from reviews
-  const averageRating = site.rating || 4.5;
-  const totalReviews = reviews.length; // Keep this for display purposes
+  // Use the actual site rating from Firestore or fall back to admin panel rating
+  const averageRating = siteRatingStats?.averageRating || site.rating || 4.5;
+  const totalReviews = siteRatingStats?.totalReviews || firestoreReviews.length || 0;
 
   // Request location permission and get user location
   const requestLocationPermission = async () => {
@@ -371,6 +384,207 @@ export function SiteInformationPage({
     requestLocationPermission();
   }, []);
 
+  // Load reviews and rating statistics - memoized to prevent unnecessary re-renders
+  const loadReviewsAndRating = useCallback(async () => {
+    if (!authService.isAuthenticated()) {
+      console.log('⚠️ User not authenticated, skipping review loading');
+      return;
+    }
+
+    setIsLoadingReviews(true);
+    try {
+      // Load reviews for the site
+      const reviews = await reviewService.getReviewsForSite(site.id);
+      setFirestoreReviews(reviews);
+
+      // Load rating statistics
+      const stats = await reviewService.getSiteRatingStats(site.id);
+      setSiteRatingStats(stats);
+
+      // Check if current user has already reviewed this site
+      const userReview = await reviewService.getUserReviewForSite(site.id);
+      setUserExistingReview(userReview);
+
+      // If user has existing review, populate the form ONLY if form is not currently being edited
+      if (userReview && !showReviewForm) {
+        setUserRating(userReview.rating);
+        setUserComment(userReview.comment);
+        setUserAspectRatings(userReview.aspectRatings || {});
+      }
+
+      console.log(`📖 Loaded ${reviews.length} reviews for site ${site.id}`);
+    } catch (error) {
+      console.error('❌ Error loading reviews:', error);
+      Alert.alert('Error', 'Failed to load reviews. Please try again.');
+    } finally {
+      setIsLoadingReviews(false);
+    }
+  }, [site.id]); // Remove showReviewForm dependency to prevent re-loading during form editing
+
+  // Load initial data when component mounts or site changes
+  useEffect(() => {
+    if (authService.isAuthenticated()) {
+      loadReviewsAndRating();
+    }
+  }, [loadReviewsAndRating]);
+
+  // Handle auth state changes separately to avoid interference with form state
+  useEffect(() => {
+    const unsubscribeAuth = authService.onAuthStateChanged((user) => {
+      if (user) {
+        // Only reload if we don't have review data yet
+        if (firestoreReviews.length === 0 && !isLoadingReviews) {
+          loadReviewsAndRating();
+        }
+      } else {
+        // Clear review data when user logs out
+        setFirestoreReviews([]);
+        setSiteRatingStats(null);
+        setUserExistingReview(null);
+        // Only reset form if it's not currently being used
+        if (!showReviewForm) {
+          setUserRating(0);
+          setUserComment('');
+          setUserAspectRatings({});
+        }
+      }
+    });
+
+    return () => {
+      unsubscribeAuth();
+    };
+  }, [loadReviewsAndRating]); // Only depend on loadReviewsAndRating
+
+  // Handle submitting a new review or updating existing review - memoized to prevent re-renders
+  const handleSubmitReview = useCallback(async () => {
+    if (!authService.isAuthenticated()) {
+      Alert.alert('Authentication Required', 'Please log in to submit a review.');
+      return;
+    }
+
+    if (userRating === 0) {
+      Alert.alert('Rating Required', 'Please provide a rating for this site.');
+      return;
+    }
+
+    if (userComment.trim().length < 10) {
+      Alert.alert('Comment Required', 'Please provide a comment with at least 10 characters.');
+      return;
+    }
+
+    setIsSubmittingReview(true);
+    try {
+      if (userExistingReview) {
+        // Update existing review
+        await reviewService.updateReview(
+          userExistingReview.id,
+          userRating,
+          userComment,
+          userAspectRatings
+        );
+        Alert.alert('Success', 'Your review has been updated successfully!');
+        setIsEditingReview(false);
+      } else {
+        // Add new review
+        await reviewService.addReview(
+          site.id,
+          userRating,
+          userComment,
+          userAspectRatings
+        );
+        Alert.alert('Success', 'Thank you for your review!');
+      }
+
+      // Reset form and reload reviews
+      setShowReviewForm(false);
+      await loadReviewsAndRating();
+    } catch (error) {
+      console.error('❌ Error submitting review:', error);
+      Alert.alert('Error', error instanceof Error ? error.message : 'Failed to submit review. Please try again.');
+    } finally {
+      setIsSubmittingReview(false);
+    }
+  }, [userRating, userComment, userAspectRatings, userExistingReview, site.id, loadReviewsAndRating]);
+
+  // Handle deleting user's review - memoized to prevent re-renders
+  const handleDeleteReview = useCallback(async () => {
+    if (!userExistingReview) return;
+
+    Alert.alert(
+      'Delete Review',
+      'Are you sure you want to delete your review? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await reviewService.deleteReview(userExistingReview.id);
+              Alert.alert('Success', 'Your review has been deleted.');
+              
+              // Reset form and reload reviews
+              setUserRating(0);
+              setUserComment('');
+              setUserAspectRatings({});
+              setIsEditingReview(false);
+              setShowReviewForm(false);
+              await loadReviewsAndRating();
+            } catch (error) {
+              console.error('❌ Error deleting review:', error);
+              Alert.alert('Error', 'Failed to delete review. Please try again.');
+            }
+          }
+        }
+      ]
+    );
+  }, [userExistingReview, loadReviewsAndRating]);
+
+  // Handle marking a review as helpful - memoized to prevent re-renders
+  const handleMarkHelpful = useCallback(async (reviewId: string) => {
+    try {
+      await reviewService.markReviewHelpful(reviewId);
+      // Reload reviews to show updated helpful count
+      await loadReviewsAndRating();
+    } catch (error) {
+      console.error('❌ Error marking review as helpful:', error);
+      Alert.alert('Error', 'Failed to mark review as helpful.');
+    }
+  }, [loadReviewsAndRating]);
+
+  // Reset review form - memoized to prevent re-renders
+  const resetReviewForm = useCallback(() => {
+    if (!userExistingReview) {
+      setUserRating(0);
+      setUserComment('');
+      setUserAspectRatings({});
+    } else {
+      // Reset to existing review values
+      setUserRating(userExistingReview.rating);
+      setUserComment(userExistingReview.comment);
+      setUserAspectRatings(userExistingReview.aspectRatings || {});
+    }
+    setIsEditingReview(false);
+    setShowReviewForm(false);
+  }, [userExistingReview]);
+
+  // Set aspect rating - memoized to prevent re-renders
+  const setAspectRating = useCallback((aspect: string, rating: number) => {
+    isFormInteractionRef.current = true;
+    setUserAspectRatings(prev => ({ ...prev, [aspect]: rating }));
+  }, []);
+
+  // Memoized handlers for form inputs to prevent re-renders
+  const handleRatingChange = useCallback((rating: number) => {
+    isFormInteractionRef.current = true;
+    setUserRating(rating);
+  }, []);
+
+  const handleCommentChange = useCallback((text: string) => {
+    isFormInteractionRef.current = true;
+    setUserComment(text);
+  }, []);
+
   const handleBookRide = () => {
     Alert.alert('Ride Booking', 'Redirecting to PickMe for ride booking...');
   };
@@ -506,22 +720,138 @@ export function SiteInformationPage({
     }
   };
 
-  const handleSubmitReview = () => {
-    if (userRating === 0) {
-      Alert.alert('Review Required', 'Please provide an overall rating');
-      return;
-    }
-    
-    Alert.alert('Success', 'Review submitted successfully!');
-    setShowReviewForm(false);
-    setUserRating(0);
-    setUserAspectRatings({});
-    setUserComment('');
-  };
+  // Star Rating Component - memoized to prevent unnecessary re-renders
+  const StarRating = React.memo(({ rating, onRatingChange, editable = false, size = 20 }: {
+    rating: number;
+    onRatingChange?: (rating: number) => void;
+    editable?: boolean;
+    size?: number;
+  }) => {
+    const handleStarPress = useCallback((starRating: number) => {
+      if (editable && onRatingChange) {
+        onRatingChange(starRating);
+      }
+    }, [editable, onRatingChange]);
 
-  const setAspectRating = (aspect: string, rating: number) => {
-    setUserAspectRatings(prev => ({ ...prev, [aspect]: rating }));
-  };
+    const stars = [];
+    for (let i = 1; i <= 5; i++) {
+      stars.push(
+        <TouchableOpacity
+          key={i}
+          onPress={() => handleStarPress(i)}
+          disabled={!editable}
+          style={styles.starButton}
+        >
+          <Text style={[styles.star, { fontSize: size, color: i <= rating ? '#FFD700' : '#E5E7EB' }]}>
+            ⭐
+          </Text>
+        </TouchableOpacity>
+      );
+    }
+    return <View style={styles.starContainer}>{stars}</View>;
+  });
+
+  // Review Form Modal - Memoized component to prevent unnecessary re-renders
+  const ReviewFormModal = React.memo(() => (
+    <Modal
+      visible={showReviewForm}
+      animationType="slide"
+      presentationStyle="pageSheet"
+    >
+      <View style={styles.reviewFormContainer}>
+        <View style={styles.reviewFormHeader}>
+          <TouchableOpacity
+            style={styles.cancelButton}
+            onPress={resetReviewForm}
+          >
+            <Text style={styles.cancelButtonText}>Cancel</Text>
+          </TouchableOpacity>
+          <Text style={styles.reviewFormTitle}>
+            {userExistingReview ? 'Edit Review' : 'Write a Review'}
+          </Text>
+          <TouchableOpacity
+            style={[styles.submitButton, isSubmittingReview && styles.disabledSubmitButton]}
+            onPress={handleSubmitReview}
+            disabled={isSubmittingReview}
+          >
+            <Text style={styles.submitButtonText}>
+              {isSubmittingReview ? 'Saving...' : 'Submit'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView style={styles.reviewFormContent}>
+          {/* Overall Rating */}
+          <View style={styles.formSection}>
+            <Text style={styles.formSectionTitle}>Overall Rating *</Text>
+            <View style={styles.ratingSection}>
+              <StarRating 
+                rating={userRating} 
+                onRatingChange={handleRatingChange} 
+                editable={true} 
+                size={32}
+              />
+              <Text style={styles.ratingText}>
+                {userRating > 0 ? `${userRating} out of 5 stars` : 'Tap to rate'}
+              </Text>
+            </View>
+          </View>
+
+          {/* Comment */}
+          <View style={styles.formSection}>
+            <Text style={styles.formSectionTitle}>Your Review *</Text>
+            <TextInput
+              style={styles.commentInput}
+              value={userComment}
+              onChangeText={handleCommentChange}
+              placeholder="Share your experience at this heritage site..."
+              multiline={true}
+              numberOfLines={6}
+              textAlignVertical="top"
+              maxLength={500}
+            />
+            <Text style={styles.characterCount}>
+              {userComment.length}/500 characters
+            </Text>
+          </View>
+
+          {/* Aspect Ratings */}
+          <View style={styles.formSection}>
+            <Text style={styles.formSectionTitle}>Rate Specific Aspects</Text>
+            {aspectCategories.map((category) => (
+              <View key={category.aspect} style={styles.aspectRatingRow}>
+                <View style={styles.aspectInfo}>
+                  <Text style={styles.aspectIcon}>{category.icon}</Text>
+                  <View style={styles.aspectText}>
+                    <Text style={styles.aspectName}>{category.aspect}</Text>
+                    <Text style={styles.aspectDescription}>{category.description}</Text>
+                  </View>
+                </View>
+                <StarRating
+                  rating={userAspectRatings[category.aspect] || 0}
+                  onRatingChange={(rating) => setAspectRating(category.aspect, rating)}
+                  editable={true}
+                  size={16}
+                />
+              </View>
+            ))}
+          </View>
+
+          {/* Delete button for existing reviews */}
+          {userExistingReview && (
+            <View style={styles.formSection}>
+              <TouchableOpacity
+                style={styles.deleteButton}
+                onPress={handleDeleteReview}
+              >
+                <Text style={styles.deleteButtonText}>Delete Review</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </ScrollView>
+      </View>
+    </Modal>
+  ));
 
   const lastSyncTime = new Date().toLocaleString();
 
@@ -797,45 +1127,151 @@ export function SiteInformationPage({
           ) : null;
         })()}
 
-        {/* Reviews Summary */}
+        {/* Reviews & Ratings */}
         <Card style={styles.reviewsCard}>
           <CardContent style={{
             ...styles.reviewsCardContent,
             paddingTop: 16,
-            paddingBottom: 16
+            paddingBottom: 0
           }}>
             <Text style={styles.sectionTitle}>Reviews & Ratings</Text>
+            
+            {/* Rating Summary */}
             <View style={styles.reviewsSummary}>
               <View style={styles.overallRating}>
                 <Text style={styles.overallRatingNumber}>{averageRating.toFixed(1)}</Text>
-                <Text style={styles.overallRatingStars}>
-                  {'⭐'.repeat(Math.floor(averageRating))}
-                  {averageRating % 1 >= 0.5 ? '⭐' : ''}
+                <StarRating rating={averageRating} size={20} />
+                <Text style={styles.totalReviewsText}>
+                  {totalReviews === 1 ? '1 review' : `${totalReviews} reviews`}
                 </Text>
-                <Text style={styles.totalReviewsText}>{totalReviews} reviews</Text>
               </View>
             </View>
-            
-            {/* Recent Reviews */}
-            <View style={styles.recentReviews}>
-              {reviews.slice(0, 2).map((review) => (
-                <View key={review.id} style={styles.reviewItem}>
-                  <View style={styles.reviewHeader}>
-                    <View style={styles.reviewerAvatar}>
-                      <Text style={styles.reviewerAvatarText}>{review.avatar}</Text>
-                    </View>
-                    <View style={styles.reviewerInfo}>
-                      <Text style={styles.reviewerName}>{review.author}</Text>
-                      <Text style={styles.reviewDate}>{review.date}</Text>
-                    </View>
-                    <Text style={styles.reviewRating}>⭐ {review.rating}</Text>
-                  </View>
-                  <Text style={styles.reviewComment}>{review.comment}</Text>
+
+            {/* User's Existing Review */}
+            {userExistingReview && (
+              <View style={styles.existingReviewSection}>
+                <View style={styles.existingReviewHeader}>
+                  <Text style={styles.existingReviewTitle}>Your Review</Text>
+                  <TouchableOpacity
+                    style={styles.editReviewButton}
+                    onPress={() => {
+                      setIsEditingReview(true);
+                      setShowReviewForm(true);
+                    }}
+                  >
+                    <Text style={styles.editReviewButtonText}>Edit</Text>
+                  </TouchableOpacity>
                 </View>
-              ))}
-            </View>
+                <View style={styles.existingReviewRating}>
+                  <StarRating rating={userExistingReview.rating} size={16} />
+                  <Text style={styles.reviewRating}>({userExistingReview.rating}/5)</Text>
+                </View>
+                <Text style={styles.existingReviewComment}>
+                  {userExistingReview.comment}
+                </Text>
+              </View>
+            )}
+
+            {/* Add Review Section */}
+            {authService.isAuthenticated() && !userExistingReview && (
+              <View style={styles.addReviewSection}>
+                <TouchableOpacity
+                  style={[styles.addReviewButton, isSubmittingReview && styles.addReviewButtonDisabled]}
+                  onPress={() => setShowReviewForm(true)}
+                  disabled={isSubmittingReview}
+                >
+                  <Text style={styles.addReviewButtonIcon}>✍️</Text>
+                  <Text style={styles.addReviewButtonText}>Write a Review</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {!authService.isAuthenticated() && (
+              <View style={styles.addReviewSection}>
+                <Text style={styles.loadingText}>Sign in to write a review</Text>
+              </View>
+            )}
+
+            {/* Loading State */}
+            {isLoadingReviews && (
+              <Text style={styles.loadingText}>Loading reviews...</Text>
+            )}
+
+            {/* Recent Reviews from Firestore */}
+            {firestoreReviews.length > 0 && (
+              <View style={styles.recentReviews}>
+                <Text style={[styles.sectionTitle, { fontSize: 16, marginBottom: 8, marginTop: 16 }]}>
+                  Recent Reviews
+                </Text>
+                {firestoreReviews.slice(0, 3).map((review) => (
+                  <View key={review.id} style={styles.reviewItem}>
+                    <View style={styles.reviewHeader}>
+                      <View style={styles.reviewerAvatar}>
+                        <Text style={styles.reviewerAvatarText}>
+                          {review.userDisplayName.charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
+                      <View style={styles.reviewerInfo}>
+                        <Text style={styles.reviewerName}>{review.userDisplayName}</Text>
+                        <Text style={styles.reviewDate}>
+                          {review.createdAt.toLocaleDateString()}
+                        </Text>
+                      </View>
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <StarRating rating={review.rating} size={14} />
+                        <Text style={styles.reviewRating}>({review.rating}/5)</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.reviewComment}>{review.comment}</Text>
+                    
+                    {/* Helpful Button - only for other users' reviews */}
+                    {authService.getCurrentUser()?.uid !== review.userId && (
+                      <TouchableOpacity
+                        style={styles.helpfulButton}
+                        onPress={() => handleMarkHelpful(review.id)}
+                      >
+                        <Text style={styles.helpfulButtonText}>👍 Helpful ({review.helpful})</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
+                
+                {firestoreReviews.length > 3 && (
+                  <Text style={styles.loadingText}>
+                    {firestoreReviews.length - 3} more reviews available
+                  </Text>
+                )}
+              </View>
+            )}
+
+            {/* Fallback to hardcoded reviews if no Firestore reviews */}
+            {!isLoadingReviews && firestoreReviews.length === 0 && (
+              <View style={styles.recentReviews}>
+                <Text style={[styles.sectionTitle, { fontSize: 16, marginBottom: 8, marginTop: 16 }]}>
+                  Sample Reviews
+                </Text>
+                {reviews.slice(0, 2).map((review) => (
+                  <View key={review.id} style={styles.reviewItem}>
+                    <View style={styles.reviewHeader}>
+                      <View style={styles.reviewerAvatar}>
+                        <Text style={styles.reviewerAvatarText}>{review.avatar}</Text>
+                      </View>
+                      <View style={styles.reviewerInfo}>
+                        <Text style={styles.reviewerName}>{review.author}</Text>
+                        <Text style={styles.reviewDate}>{review.date}</Text>
+                      </View>
+                      <Text style={styles.reviewRating}>⭐ {review.rating}</Text>
+                    </View>
+                    <Text style={styles.reviewComment}>{review.comment}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
           </CardContent>
         </Card>
+
+        {/* Review Form Modal */}
+        <ReviewFormModal />
       </ScrollView>
     </View>
   );
@@ -1278,5 +1714,222 @@ const styles = StyleSheet.create({
   disabledButton: {
     opacity: 0.7,
     backgroundColor: '#D1D5DB', // gray-300
+  },
+  // Star Rating Styles
+  starContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  starButton: {
+    padding: 2,
+  },
+  star: {
+    fontSize: 20,
+  },
+  // Review Form Styles
+  reviewFormContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  reviewFormHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB', // gray-200
+  },
+  cancelButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    color: '#6B7280', // gray-500
+  },
+  reviewFormTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827', // gray-900
+  },
+  submitButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#EA580C', // orange-600
+    borderRadius: 6,
+  },
+  submitButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  disabledSubmitButton: {
+    opacity: 0.6,
+    backgroundColor: '#D1D5DB', // gray-300
+  },
+  reviewFormContent: {
+    flex: 1,
+    padding: 16,
+  },
+  formSection: {
+    marginBottom: 24,
+  },
+  formSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827', // gray-900
+    marginBottom: 12,
+  },
+  ratingSection: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  commentInput: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB', // gray-300
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    minHeight: 120,
+    textAlignVertical: 'top',
+  },
+  characterCount: {
+    fontSize: 12,
+    color: '#6B7280', // gray-500
+    textAlign: 'right',
+    marginTop: 4,
+  },
+  aspectRatingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6', // gray-100
+  },
+  aspectInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 16,
+  },
+  aspectIcon: {
+    fontSize: 20,
+    marginRight: 12,
+  },
+  aspectText: {
+    flex: 1,
+  },
+  aspectName: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#111827', // gray-900
+  },
+  aspectDescription: {
+    fontSize: 12,
+    color: '#6B7280', // gray-500
+    marginTop: 2,
+  },
+  deleteButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    backgroundColor: '#EF4444', // red-500
+    borderRadius: 8,
+    alignSelf: 'center',
+  },
+  deleteButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  // New Review Section Styles
+  addReviewSection: {
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB', // gray-200
+    backgroundColor: '#F9FAFB', // gray-50
+  },
+  addReviewButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    backgroundColor: '#EA580C', // orange-600
+    borderRadius: 8,
+  },
+  addReviewButtonDisabled: {
+    backgroundColor: '#D1D5DB', // gray-300
+  },
+  addReviewButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  addReviewButtonIcon: {
+    fontSize: 16,
+  },
+  existingReviewSection: {
+    padding: 16,
+    backgroundColor: '#F0FDF4', // green-50
+    borderWidth: 1,
+    borderColor: '#BBF7D0', // green-200
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  existingReviewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  existingReviewTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#166534', // green-800
+  },
+  editReviewButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#EA580C', // orange-600
+    borderRadius: 4,
+  },
+  editReviewButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  existingReviewRating: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 4,
+  },
+  existingReviewComment: {
+    fontSize: 14,
+    color: '#166534', // green-800
+    lineHeight: 20,
+  },
+  helpfulButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#F3F4F6', // gray-100
+    borderRadius: 4,
+    marginTop: 8,
+  },
+  helpfulButtonText: {
+    fontSize: 12,
+    color: '#6B7280', // gray-500
+  },
+  loadingText: {
+    fontSize: 14,
+    color: '#6B7280', // gray-500
+    textAlign: 'center',
+    padding: 16,
   },
 });
