@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, initializeAuth } from 'firebase/auth';
+import { getAuth, initializeAuth, Auth } from 'firebase/auth';
 import { getFirestore, collection, getDocs } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -19,7 +19,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 // Initialize Firebase Auth
-let auth;
+let auth: Auth;
 try {
   auth = initializeAuth(app);
 } catch (error) {
@@ -64,6 +64,32 @@ export interface FirestoreSite {
 export const getSitesFromFirestore = async (): Promise<FirestoreSite[]> => {
   try {
     console.log('🔄 Fetching sites directly from Firestore...');
+    
+    // Wait for auth state to be ready
+    await new Promise((resolve) => {
+      if (auth.currentUser) {
+        resolve(auth.currentUser);
+      } else {
+        const unsubscribe = auth.onAuthStateChanged((user) => {
+          if (user) {
+            unsubscribe();
+            resolve(user);
+          }
+        });
+        // Timeout after 5 seconds if no auth
+        setTimeout(() => {
+          unsubscribe();
+          resolve(null);
+        }, 5000);
+      }
+    });
+    
+    if (!auth.currentUser) {
+      console.log('🔒 Firebase: User not authenticated after waiting');
+      throw new Error('User not authenticated');
+    }
+    
+    console.log('👤 Firebase: User authenticated:', auth.currentUser.email);
     
     const sitesCollection = collection(firestore, 'sites');
     const sitesSnapshot = await getDocs(sitesCollection);
