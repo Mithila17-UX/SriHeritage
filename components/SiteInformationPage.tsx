@@ -19,6 +19,9 @@ import { routingServiceOSM } from '../services/routingServiceOSM';
 import { LeafletPageService } from '../services/leafletPage';
 import { reviewService, Review as FirestoreReview, SiteRatingStats } from '../services/reviewService';
 import { authService } from '../services/auth';
+// BEGIN nearby - Import new components
+import { NearbySection } from './NearbySection';
+// END nearby
 
 interface SiteInformationPageProps {
   site: {
@@ -41,6 +44,42 @@ interface SiteInformationPageProps {
       latitude: number;
       longitude: number;
     };
+    // BEGIN nearby - Optional fields for nearby functionality
+    subplaces?: Array<{
+      id: number;
+      name: string;
+      category: string;
+      description: string;
+      rating?: number;
+      image?: string;
+      image_url?: string;
+      openingHours?: string;
+      visiting_hours?: string;
+      location: string;
+      latitude: number;
+      longitude: number;
+      created_at: string;
+      updated_at: string;
+      distanceKm?: number;
+    }>;
+    nearby?: Array<{
+      id: number;
+      name: string;
+      category: string;
+      description: string;
+      rating?: number;
+      image?: string;
+      image_url?: string;
+      openingHours?: string;
+      visiting_hours?: string;
+      location: string;
+      latitude: number;
+      longitude: number;
+      created_at: string;
+      updated_at: string;
+      distanceKm?: number;
+    }>;
+    // END nearby
   };
   isFavorite: boolean;
   isVisited: boolean;
@@ -49,6 +88,9 @@ interface SiteInformationPageProps {
   isPlanned: boolean;
   onVisitStatusChange: (status: 'visited' | 'not-visited' | 'planned') => void;
   onBack: () => void;
+  // BEGIN nearby - Optional navigation function
+  onNavigateToSite?: (site: any) => void;
+  // END nearby
 }
 
 interface AspectRating {
@@ -160,7 +202,10 @@ export function SiteInformationPage({
   offlineMode,
   onToggleFavorite,
   onVisitStatusChange,
-  onBack 
+  onBack,
+  // BEGIN nearby - Optional navigation prop
+  onNavigateToSite
+  // END nearby
 }: SiteInformationPageProps) {
   const [userRating, setUserRating] = useState(0);
   const [userComment, setUserComment] = useState('');
@@ -185,6 +230,10 @@ export function SiteInformationPage({
 
   // Ref to prevent unnecessary re-renders during form interactions
   const isFormInteractionRef = useRef(false);
+
+  // BEGIN nearby - Tab state for new tab system
+  const [activeTab, setActiveTab] = useState<'about' | 'nearby' | 'gallery' | 'reviews'>('about');
+  // END nearby
 
   // Debug logging for site data
   useEffect(() => {
@@ -855,6 +904,103 @@ export function SiteInformationPage({
 
   const lastSyncTime = new Date().toLocaleString();
 
+  // BEGIN nearby - Mock data for subplaces and nearby attractions
+  // TODO: Replace with real backend data population
+  const mockSubplaces = React.useMemo(() => {
+    if (site.name.includes('Temple of the Sacred Tooth Relic')) {
+      return [
+        {
+          id: 1001,
+          name: 'Royal Palace Complex',
+          category: 'Palace',
+          description: 'Former royal residence with beautiful architecture and gardens',
+          rating: 4.3,
+          image: 'https://example.com/royal-palace.jpg',
+          openingHours: '8:00 AM - 5:00 PM',
+          location: 'Kandy',
+          latitude: 7.2906,
+          longitude: 80.6337,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        {
+          id: 1002,
+          name: 'Sacred Tooth Museum',
+          category: 'Museum',
+          description: 'Museum showcasing artifacts and history of the sacred tooth relic',
+          rating: 4.1,
+          image: 'https://example.com/tooth-museum.jpg',
+          openingHours: '8:00 AM - 7:00 PM',
+          location: 'Kandy',
+          latitude: 7.2907,
+          longitude: 80.6338,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }
+      ];
+    }
+    return [];
+  }, [site.name]);
+
+  const mockNearbyAttractions = React.useMemo(() => {
+    if (site.name.includes('Temple of the Sacred Tooth Relic')) {
+      return [
+        {
+          id: 2001,
+          name: 'Kandy Lake',
+          category: 'Natural Site',
+          description: 'Scenic artificial lake created by the last king of Kandy, perfect for evening walks',
+          rating: 4.2,
+          image: 'https://example.com/kandy-lake.jpg',
+          openingHours: '6:00 AM - 6:00 PM',
+          location: 'Kandy',
+          latitude: 7.2916,
+          longitude: 80.6340,
+          distanceKm: 0.3,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        {
+          id: 2002,
+          name: 'Royal Botanical Gardens',
+          category: 'Botanical Garden',
+          description: 'World-renowned botanical gardens with over 4000 species of plants',
+          rating: 4.6,
+          image: 'https://example.com/botanical-gardens.jpg',
+          openingHours: '7:30 AM - 5:00 PM',
+          location: 'Peradeniya, Kandy',
+          latitude: 7.2733,
+          longitude: 80.5996,
+          distanceKm: 1.8,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }
+      ];
+    }
+    return [];
+  }, [site.name]);
+
+  // Enhance site data with mock subplaces and nearby data
+  const enhancedSite = React.useMemo(() => ({
+    ...site,
+    subplaces: site.subplaces || mockSubplaces,
+    nearby: site.nearby || mockNearbyAttractions,
+  }), [site, mockSubplaces, mockNearbyAttractions]);
+
+  // Handle navigation to a subplace or nearby site
+  const handleNavigateToSite = useCallback((targetSite: any) => {
+    // Use existing navigation pattern if available, otherwise push to stack
+    // This maintains compatibility with the existing navigation system
+    if (typeof onNavigateToSite === 'function') {
+      onNavigateToSite(targetSite);
+    } else {
+      // Fallback: If no onNavigateToSite prop, we could navigate via React Navigation
+      // For now, we'll show an alert as a placeholder
+      Alert.alert('Navigation', `Would navigate to ${targetSite.name}`);
+    }
+  }, []);
+  // END nearby
+
   return (
     <View style={styles.container}>
       {/* Full Screen Map Modal */}
@@ -990,7 +1136,38 @@ export function SiteInformationPage({
       </View>
 
       {/* Content */}
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+      {/* BEGIN nearby - Tab bar */}
+      <View style={styles.tabBar}>
+        <TouchableOpacity
+          style={[styles.tabButton, activeTab === 'about' && styles.tabButtonActive]}
+          onPress={() => setActiveTab('about')}
+        >
+          <Text style={[styles.tabText, activeTab === 'about' && styles.tabTextActive]}>About</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tabButton, activeTab === 'nearby' && styles.tabButtonActive]}
+          onPress={() => setActiveTab('nearby')}
+        >
+          <Text style={[styles.tabText, activeTab === 'nearby' && styles.tabTextActive]}>Nearby</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tabButton, activeTab === 'gallery' && styles.tabButtonActive]}
+          onPress={() => setActiveTab('gallery')}
+        >
+          <Text style={[styles.tabText, activeTab === 'gallery' && styles.tabTextActive]}>Gallery</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tabButton, activeTab === 'reviews' && styles.tabButtonActive]}
+          onPress={() => setActiveTab('reviews')}
+        >
+          <Text style={[styles.tabText, activeTab === 'reviews' && styles.tabTextActive]}>Reviews</Text>
+        </TouchableOpacity>
+      </View>
+      {/* END nearby */}
+
+      {/* Tab Content */}
+      {activeTab === 'about' && (
+        <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         {/* Basic Info */}
         <Card style={styles.infoCard}>
           <CardContent style={{
@@ -1076,203 +1253,218 @@ export function SiteInformationPage({
           </CardContent>
         </Card>
 
-        {/* Gallery Preview */}
-        {(() => {
-          // Handle different gallery data formats
-          let galleryImages: string[] = [];
-          
-          if (Array.isArray(site.gallery)) {
-            galleryImages = site.gallery;
-          } else if (typeof site.gallery === 'string') {
-            // If gallery is a string, try to parse it as JSON or split by comma
-            try {
-              const parsed = JSON.parse(site.gallery);
-              galleryImages = Array.isArray(parsed) ? parsed : [site.gallery];
-            } catch {
-              // If parsing fails, treat as comma-separated string
-              galleryImages = site.gallery.split(',').map(url => url.trim()).filter(url => url.length > 0);
-            }
-          }
-          
-          console.log('🖼️ Gallery processing:', {
-            originalGallery: site.gallery,
-            processedImages: galleryImages,
-            imageCount: galleryImages.length
-          });
-          
-          return galleryImages.length > 0 ? (
-            <Card style={styles.galleryCard}>
-              <CardContent style={{
-                ...styles.galleryCardContent,
-                paddingTop: 16,
-                paddingBottom: 16
-              }}>
-                <Text style={styles.sectionTitle}>Gallery</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.galleryScroll}>
-                  {galleryImages.map((imageUrl, index) => {
-                    console.log(`🖼️ Gallery image ${index}:`, imageUrl);
-                    return (
-                      <Image
-                        key={index}
-                        source={{ uri: imageUrl }}
-                        style={styles.galleryImage}
-                        resizeMode="cover"
-                        onError={(error) => console.log(`❌ Gallery image ${index} error:`, error)}
-                      />
-                    );
-                  })}
-                </ScrollView>
-              </CardContent>
-            </Card>
-          ) : null;
-        })()}
-
-        {/* Reviews & Ratings */}
-        <Card style={styles.reviewsCard}>
-          <CardContent style={{
-            ...styles.reviewsCardContent,
-            paddingTop: 16,
-            paddingBottom: 0
-          }}>
-            <Text style={styles.sectionTitle}>Reviews & Ratings</Text>
-            
-            {/* Rating Summary */}
-            <View style={styles.reviewsSummary}>
-              <View style={styles.overallRating}>
-                <Text style={styles.overallRatingNumber}>{averageRating.toFixed(1)}</Text>
-                <StarRating rating={averageRating} size={20} />
-                <Text style={styles.totalReviewsText}>
-                  {totalReviews === 1 ? '1 review' : `${totalReviews} reviews`}
-                </Text>
-              </View>
-            </View>
-
-            {/* User's Existing Review */}
-            {userExistingReview && (
-              <View style={styles.existingReviewSection}>
-                <View style={styles.existingReviewHeader}>
-                  <Text style={styles.existingReviewTitle}>Your Review</Text>
-                  <TouchableOpacity
-                    style={styles.editReviewButton}
-                    onPress={() => {
-                      setIsEditingReview(true);
-                      setShowReviewForm(true);
-                    }}
-                  >
-                    <Text style={styles.editReviewButtonText}>Edit</Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.existingReviewRating}>
-                  <StarRating rating={userExistingReview.rating} size={16} />
-                  <Text style={styles.reviewRating}>({userExistingReview.rating}/5)</Text>
-                </View>
-                <Text style={styles.existingReviewComment}>
-                  {userExistingReview.comment}
-                </Text>
-              </View>
-            )}
-
-            {/* Add Review Section */}
-            {authService.isAuthenticated() && !userExistingReview && (
-              <View style={styles.addReviewSection}>
-                <TouchableOpacity
-                  style={[styles.addReviewButton, isSubmittingReview && styles.addReviewButtonDisabled]}
-                  onPress={() => setShowReviewForm(true)}
-                  disabled={isSubmittingReview}
-                >
-                  <Text style={styles.addReviewButtonIcon}>✍️</Text>
-                  <Text style={styles.addReviewButtonText}>Write a Review</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {!authService.isAuthenticated() && (
-              <View style={styles.addReviewSection}>
-                <Text style={styles.loadingText}>Sign in to write a review</Text>
-              </View>
-            )}
-
-            {/* Loading State */}
-            {isLoadingReviews && (
-              <Text style={styles.loadingText}>Loading reviews...</Text>
-            )}
-
-            {/* Recent Reviews from Firestore */}
-            {firestoreReviews.length > 0 && (
-              <View style={styles.recentReviews}>
-                <Text style={[styles.sectionTitle, { fontSize: 16, marginBottom: 8, marginTop: 16 }]}>
-                  Recent Reviews
-                </Text>
-                {firestoreReviews.slice(0, 3).map((review) => (
-                  <View key={review.id} style={styles.reviewItem}>
-                    <View style={styles.reviewHeader}>
-                      <View style={styles.reviewerAvatar}>
-                        <Text style={styles.reviewerAvatarText}>
-                          {review.userDisplayName.charAt(0).toUpperCase()}
-                        </Text>
-                      </View>
-                      <View style={styles.reviewerInfo}>
-                        <Text style={styles.reviewerName}>{review.userDisplayName}</Text>
-                        <Text style={styles.reviewDate}>
-                          {review.createdAt.toLocaleDateString()}
-                        </Text>
-                      </View>
-                      <View style={{ alignItems: 'flex-end' }}>
-                        <StarRating rating={review.rating} size={14} />
-                        <Text style={styles.reviewRating}>({review.rating}/5)</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.reviewComment}>{review.comment}</Text>
-                    
-                    {/* Helpful Button - only for other users' reviews */}
-                    {authService.getCurrentUser()?.uid !== review.userId && (
-                      <TouchableOpacity
-                        style={styles.helpfulButton}
-                        onPress={() => handleMarkHelpful(review.id)}
-                      >
-                        <Text style={styles.helpfulButtonText}>👍 Helpful ({review.helpful})</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                ))}
-                
-                {firestoreReviews.length > 3 && (
-                  <Text style={styles.loadingText}>
-                    {firestoreReviews.length - 3} more reviews available
-                  </Text>
-                )}
-              </View>
-            )}
-
-            {/* Fallback to hardcoded reviews if no Firestore reviews */}
-            {!isLoadingReviews && firestoreReviews.length === 0 && (
-              <View style={styles.recentReviews}>
-                <Text style={[styles.sectionTitle, { fontSize: 16, marginBottom: 8, marginTop: 16 }]}>
-                  Sample Reviews
-                </Text>
-                {reviews.slice(0, 2).map((review) => (
-                  <View key={review.id} style={styles.reviewItem}>
-                    <View style={styles.reviewHeader}>
-                      <View style={styles.reviewerAvatar}>
-                        <Text style={styles.reviewerAvatarText}>{review.avatar}</Text>
-                      </View>
-                      <View style={styles.reviewerInfo}>
-                        <Text style={styles.reviewerName}>{review.author}</Text>
-                        <Text style={styles.reviewDate}>{review.date}</Text>
-                      </View>
-                      <Text style={styles.reviewRating}>⭐ {review.rating}</Text>
-                    </View>
-                    <Text style={styles.reviewComment}>{review.comment}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-          </CardContent>
-        </Card>
-
         {/* Review Form Modal */}
         <ReviewFormModal />
       </ScrollView>
+      )}
+
+      {/* BEGIN nearby - Nearby Tab Content */}
+      {activeTab === 'nearby' && (
+        <NearbySection
+          currentSite={enhancedSite}
+          onNavigateToSite={handleNavigateToSite}
+          isOffline={offlineMode}
+        />
+      )}
+      {/* END nearby */}
+
+      {/* Gallery Tab Content */}
+      {activeTab === 'gallery' && (
+        <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+          {(() => {
+            // Handle different gallery data formats
+            let galleryImages: string[] = [];
+            
+            if (Array.isArray(site.gallery)) {
+              galleryImages = site.gallery;
+            } else if (typeof site.gallery === 'string') {
+              try {
+                const parsed = JSON.parse(site.gallery);
+                galleryImages = Array.isArray(parsed) ? parsed : [site.gallery];
+              } catch {
+                galleryImages = site.gallery.split(',').map(url => url.trim()).filter(url => url.length > 0);
+              }
+            }
+            
+            return galleryImages.length > 0 ? (
+              <Card style={styles.galleryCard}>
+                <CardContent style={{
+                  ...styles.galleryCardContent,
+                  paddingTop: 16,
+                  paddingBottom: 16
+                }}>
+                  <Text style={styles.sectionTitle}>Gallery</Text>
+                  <View style={styles.galleryGrid}>
+                    {galleryImages.map((imageUrl, index) => (
+                      <Image
+                        key={index}
+                        source={{ uri: imageUrl }}
+                        style={styles.galleryGridImage}
+                        resizeMode="cover"
+                        onError={(error) => console.log(`❌ Gallery image ${index} error:`, error)}
+                      />
+                    ))}
+                  </View>
+                </CardContent>
+              </Card>
+            ) : (
+              <View style={styles.emptyStateContainer}>
+                <Text style={styles.emptyStateText}>No gallery images available</Text>
+              </View>
+            );
+          })()}
+        </ScrollView>
+      )}
+
+      {/* Reviews Tab Content */}
+      {activeTab === 'reviews' && (
+        <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+          <Card style={styles.reviewsCard}>
+            <CardContent style={{
+              ...styles.reviewsCardContent,
+              paddingTop: 16,
+              paddingBottom: 0
+            }}>
+              <Text style={styles.sectionTitle}>Reviews & Ratings</Text>
+              
+              {/* Rating Summary */}
+              <View style={styles.reviewsSummary}>
+                <View style={styles.overallRating}>
+                  <Text style={styles.overallRatingNumber}>{averageRating.toFixed(1)}</Text>
+                  <StarRating rating={averageRating} size={20} />
+                  <Text style={styles.totalReviewsText}>
+                    {totalReviews === 1 ? '1 review' : `${totalReviews} reviews`}
+                  </Text>
+                </View>
+              </View>
+
+              {/* User's Existing Review */}
+              {userExistingReview && (
+                <View style={styles.existingReviewSection}>
+                  <View style={styles.existingReviewHeader}>
+                    <Text style={styles.existingReviewTitle}>Your Review</Text>
+                    <TouchableOpacity
+                      style={styles.editReviewButton}
+                      onPress={() => {
+                        setIsEditingReview(true);
+                        setShowReviewForm(true);
+                      }}
+                    >
+                      <Text style={styles.editReviewButtonText}>Edit</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.existingReviewRating}>
+                    <StarRating rating={userExistingReview.rating} size={16} />
+                    <Text style={styles.reviewRating}>({userExistingReview.rating}/5)</Text>
+                  </View>
+                  <Text style={styles.existingReviewComment}>
+                    {userExistingReview.comment}
+                  </Text>
+                </View>
+              )}
+
+              {/* Add Review Section */}
+              {authService.isAuthenticated() && !userExistingReview && (
+                <View style={styles.addReviewSection}>
+                  <TouchableOpacity
+                    style={[styles.addReviewButton, isSubmittingReview && styles.addReviewButtonDisabled]}
+                    onPress={() => setShowReviewForm(true)}
+                    disabled={isSubmittingReview}
+                  >
+                    <Text style={styles.addReviewButtonIcon}>✍️</Text>
+                    <Text style={styles.addReviewButtonText}>Write a Review</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {!authService.isAuthenticated() && (
+                <View style={styles.addReviewSection}>
+                  <Text style={styles.loadingText}>Sign in to write a review</Text>
+                </View>
+              )}
+
+              {/* Loading State */}
+              {isLoadingReviews && (
+                <Text style={styles.loadingText}>Loading reviews...</Text>
+              )}
+
+              {/* Recent Reviews from Firestore */}
+              {firestoreReviews.length > 0 && (
+                <View style={styles.recentReviews}>
+                  <Text style={[styles.sectionTitle, { fontSize: 16, marginBottom: 8, marginTop: 16 }]}>
+                    Recent Reviews
+                  </Text>
+                  {firestoreReviews.slice(0, 3).map((review) => (
+                    <View key={review.id} style={styles.reviewItem}>
+                      <View style={styles.reviewHeader}>
+                        <View style={styles.reviewerAvatar}>
+                          <Text style={styles.reviewerAvatarText}>
+                            {review.userDisplayName.charAt(0).toUpperCase()}
+                          </Text>
+                        </View>
+                        <View style={styles.reviewerInfo}>
+                          <Text style={styles.reviewerName}>{review.userDisplayName}</Text>
+                          <Text style={styles.reviewDate}>
+                            {review.createdAt.toLocaleDateString()}
+                          </Text>
+                        </View>
+                        <View style={{ alignItems: 'flex-end' }}>
+                          <StarRating rating={review.rating} size={14} />
+                          <Text style={styles.reviewRating}>({review.rating}/5)</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.reviewComment}>{review.comment}</Text>
+                      
+                      {/* Helpful Button - only for other users' reviews */}
+                      {authService.getCurrentUser()?.uid !== review.userId && (
+                        <TouchableOpacity
+                          style={styles.helpfulButton}
+                          onPress={() => handleMarkHelpful(review.id)}
+                        >
+                          <Text style={styles.helpfulButtonText}>👍 Helpful ({review.helpful})</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  ))}
+                  
+                  {firestoreReviews.length > 3 && (
+                    <Text style={styles.loadingText}>
+                      {firestoreReviews.length - 3} more reviews available
+                    </Text>
+                  )}
+                </View>
+              )}
+
+              {/* Fallback to hardcoded reviews if no Firestore reviews */}
+              {!isLoadingReviews && firestoreReviews.length === 0 && (
+                <View style={styles.recentReviews}>
+                  <Text style={[styles.sectionTitle, { fontSize: 16, marginBottom: 8, marginTop: 16 }]}>
+                    Sample Reviews
+                  </Text>
+                  {reviews.slice(0, 2).map((review) => (
+                    <View key={review.id} style={styles.reviewItem}>
+                      <View style={styles.reviewHeader}>
+                        <View style={styles.reviewerAvatar}>
+                          <Text style={styles.reviewerAvatarText}>{review.avatar}</Text>
+                        </View>
+                        <View style={styles.reviewerInfo}>
+                          <Text style={styles.reviewerName}>{review.author}</Text>
+                          <Text style={styles.reviewDate}>{review.date}</Text>
+                        </View>
+                        <Text style={styles.reviewRating}>⭐ {review.rating}</Text>
+                      </View>
+                      <Text style={styles.reviewComment}>{review.comment}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </CardContent>
+          </Card>
+        </ScrollView>
+      )}
+
+      {/* Review Form Modal - Show on all tabs */}
+      <ReviewFormModal />
     </View>
   );
 }
@@ -1932,4 +2124,55 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     padding: 16,
   },
+  // BEGIN nearby - Tab system styles
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB', // gray-200
+    paddingHorizontal: 16,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabButtonActive: {
+    borderBottomColor: '#EA580C', // orange-600
+  },
+  tabText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#6B7280', // gray-500
+  },
+  tabTextActive: {
+    color: '#EA580C', // orange-600
+    fontWeight: '600',
+  },
+  // Gallery grid styles
+  galleryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+  },
+  galleryGridImage: {
+    width: '48%',
+    height: 120,
+    marginBottom: 8,
+    borderRadius: 8,
+  },
+  // Empty state styles
+  emptyStateContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+  },
+  emptyStateText: {
+    fontSize: 16,
+    color: '#9CA3AF', // gray-400
+    fontStyle: 'italic',
+  },
+  // END nearby
 });

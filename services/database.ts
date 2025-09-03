@@ -29,7 +29,23 @@ export interface Site {
     latitude: number;
     longitude: number;
   };
+  // BEGIN nearby - Optional fields for nearby functionality
+  subplaces?: SiteSubplace[];
+  nearby?: NearbySite[];
+  // END nearby
 }
+
+// BEGIN nearby - New types for nearby functionality
+export type DistanceKm = number;
+
+export type SiteSubplace = Omit<Site, 'subplaces' | 'nearby'> & {
+  distanceKm?: DistanceKm; // optional for subplaces
+};
+
+export type NearbySite = Omit<Site, 'subplaces' | 'nearby'> & {
+  distanceKm?: DistanceKm; // used for nearby attractions
+};
+// END nearby
 
 export interface FavoriteSite {
   id: number;

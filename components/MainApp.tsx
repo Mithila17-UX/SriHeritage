@@ -91,7 +91,7 @@ export function MainApp({ user, onLogout }: MainAppProps) {
             visitedSites={visitedSites}
             favoriteSites={favoriteSites}
             onNavigateToSite={handleNavigateToSite}
-            onNavigateToScreen={setCurrentScreen}
+            onNavigateToScreen={handleNavigateToScreen}
           />
         );
       case 'home':
@@ -137,6 +137,7 @@ export function MainApp({ user, onLogout }: MainAppProps) {
             onToggleFavorite={() => toggleFavorite(selectedSite.id)}
             onVisitStatusChange={(status) => handleVisitStatusChange(selectedSite.id, status)}
             onBack={handleBackFromSite}
+            onNavigateToSite={handleNavigateToSite}
           />
         ) : null;
       default:
@@ -146,7 +147,7 @@ export function MainApp({ user, onLogout }: MainAppProps) {
             visitedSites={visitedSites}
             favoriteSites={favoriteSites}
             onNavigateToSite={handleNavigateToSite}
-            onNavigateToScreen={setCurrentScreen}
+            onNavigateToScreen={handleNavigateToScreen}
           />
         );
     }
@@ -155,6 +156,17 @@ export function MainApp({ user, onLogout }: MainAppProps) {
   const handleTabChange = (tab: TabType) => {
     setActiveTab(tab);
     setCurrentScreen(tab);
+  };
+
+  // Helper function to handle screen navigation with proper type conversion
+  const handleNavigateToScreen = (screen: string) => {
+    // Convert string to ScreenType, defaulting to 'dashboard' if invalid
+    const validScreens: ScreenType[] = ['dashboard', 'home', 'places', 'chat', 'forum', 'profile', 'site-info'];
+    const targetScreen = validScreens.includes(screen as ScreenType) ? (screen as ScreenType) : 'dashboard';
+    setCurrentScreen(targetScreen);
+    if (targetScreen !== 'site-info') {
+      setActiveTab(targetScreen as TabType);
+    }
   };
 
   // Don't show bottom navigation on site info page
