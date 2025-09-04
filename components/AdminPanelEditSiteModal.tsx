@@ -12,6 +12,7 @@ import { databaseService } from '../services/database';
 import { ImagePickerModal } from './ImagePickerModal';
 import { ImageUploadService } from '../services/imageUpload';
 import { DistanceCalculatorService, AVAILABLE_DISTRICTS } from '../services/distanceCalculator';
+import { AdminNearbyEditor, NearbyRef } from './AdminNearbyEditor';
 
 interface Site {
   id: string;
@@ -30,6 +31,10 @@ interface Site {
     latitude: number;
     longitude: number;
   };
+  // BEGIN nearby-admin
+  subplaces?: NearbyRef[];
+  nearby?: NearbyRef[];
+  // END nearby-admin
 }
 
 interface AdminPanelEditSiteModalProps {
@@ -37,9 +42,20 @@ interface AdminPanelEditSiteModalProps {
   site: Site | null;
   onClose: () => void;
   onSiteUpdated: (updatedSite: Site) => void;
+  // BEGIN nearby-admin
+  onNavigateToSite?: (siteId: string) => void;
+  // END nearby-admin
 }
 
-export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated }: AdminPanelEditSiteModalProps) {
+export function AdminPanelEditSiteModal({ 
+  visible, 
+  site, 
+  onClose, 
+  onSiteUpdated,
+  // BEGIN nearby-admin
+  onNavigateToSite: propOnNavigateToSite
+  // END nearby-admin
+}: AdminPanelEditSiteModalProps) {
   const [formData, setFormData] = useState({
     name: '',
     location: '',
@@ -58,6 +74,10 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
   const [isUpdating, setIsUpdating] = useState(false);
   const [showImagePicker, setShowImagePicker] = useState(false);
   const [isCalculatingDistance, setIsCalculatingDistance] = useState(false);
+  // BEGIN nearby-admin
+  const [subplaces, setSubplaces] = useState<NearbyRef[]>([]);
+  const [nearby, setNearby] = useState<NearbyRef[]>([]);
+  // END nearby-admin
 
   useEffect(() => {
     if (site) {
@@ -75,6 +95,12 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
         latitude: site.coordinates?.latitude?.toString() || '',
         longitude: site.coordinates?.longitude?.toString() || ''
       });
+      
+      // BEGIN nearby-admin
+      // Initialize nearby editors from site data
+      setSubplaces(site.subplaces || []);
+      setNearby(site.nearby || []);
+      // END nearby-admin
     }
   }, [site]);
 
@@ -257,7 +283,11 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
         coordinates: {
           latitude: latitude,
           longitude: longitude
-        }
+        },
+        // BEGIN nearby-admin
+        subplaces: subplaces,
+        nearby: nearby
+        // END nearby-admin
       };
 
       // Update Firestore
@@ -273,14 +303,33 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
         description: updatedSite.description,
         openingHours: updatedSite.openingHours,
         entranceFee: updatedSite.entranceFee,
-        coordinates: updatedSite.coordinates
+        coordinates: updatedSite.coordinates,
+        // BEGIN nearby-admin
+        subplaces: subplaces,
+        nearby: nearby
+        // END nearby-admin
       });
 
-      // Update local SQLite
+      // Update local SQLite (excluding the nearby fields for now, they'll be synced later)
       await databaseService.insertOrUpdateSite({
-        ...updatedSite,
         id: parseInt(site.id),
-        gallery: JSON.stringify(site.gallery || [])
+        name: updatedSite.name,
+        location: updatedSite.location,
+        district: updatedSite.district,
+        distance: updatedSite.distance,
+        rating: updatedSite.rating,
+        image: updatedSite.image,
+        category: updatedSite.category,
+        description: updatedSite.description,
+        openingHours: updatedSite.openingHours,
+        entranceFee: updatedSite.entranceFee,
+        coordinates: updatedSite.coordinates,
+        gallery: JSON.stringify(site.gallery || []),
+        // Other required fields
+        latitude: latitude,
+        longitude: longitude,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       });
 
       console.log('✅ Site updated successfully:', updatedSite.name);
@@ -498,6 +547,26 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
             </View>
           </View>
 
+          {/* BEGIN nearby-admin */}
+          {/* Nearby Management Section */}
+          <View style={styles.nearbySection}>
+            <AdminNearbyEditor
+              title="Within This Site"
+              value={subplaces}
+              onChange={setSubplaces}
+              testID="subplaces-editor"
+            />
+            
+            <AdminNearbyEditor
+              title="Nearby Attractions"
+              value={nearby}
+              onChange={setNearby}
+              maxDistanceKm={2}
+              testID="nearby-editor"
+            />
+          </View>
+          {/* END nearby-admin */}
+
           {/* Manual Calculate Button */}
           {formData.district && formData.latitude && formData.longitude && (
             <TouchableOpacity
@@ -512,15 +581,36 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
           )}
 
           {/* Update Button */}
-          <TouchableOpacity
-            style={[styles.updateButton, isUpdating && styles.updateButtonDisabled]}
-            onPress={handleUpdateSite}
-            disabled={isUpdating}
-          >
-            <Text style={styles.updateButtonText}>
-              {isUpdating ? '🔄 Updating...' : '✅ Update Site'}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.buttonSection}>
+            {/* BEGIN nearby-admin */}
+            {/* Preview Nearby Button */}
+            <TouchableOpacity
+              style={styles.previewButton}
+              onPress={() => {
+                // Navigate to SiteInformationPage for preview
+                if (propOnNavigateToSite) {
+                  propOnNavigateToSite(site.id);
+                } else {
+                  Alert.alert('Preview', 'Navigate to site information page to preview nearby functionality.');
+                }
+              }}
+            >
+              <Text style={styles.previewButtonText}>
+                👁️ Preview Nearby Tab
+              </Text>
+            </TouchableOpacity>
+            {/* END nearby-admin */}
+            
+            <TouchableOpacity
+              style={[styles.updateButton, isUpdating && styles.updateButtonDisabled]}
+              onPress={handleUpdateSite}
+              disabled={isUpdating}
+            >
+              <Text style={styles.updateButtonText}>
+                {isUpdating ? '🔄 Updating...' : '✅ Update Site'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </ScrollView>
 
         {/* Image Picker Modal */}
@@ -689,4 +779,26 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
+  // BEGIN nearby-admin
+  nearbySection: {
+    marginTop: 16,
+    marginBottom: 16,
+    gap: 16,
+  },
+  buttonSection: {
+    gap: 12,
+    marginTop: 20,
+  },
+  previewButton: {
+    backgroundColor: '#8B5CF6',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  previewButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  // END nearby-admin
 });

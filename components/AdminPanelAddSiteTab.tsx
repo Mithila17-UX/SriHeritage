@@ -13,6 +13,7 @@ import { databaseService } from '../services/database';
 import { adminLogsService } from '../services/adminLogs';
 import { ImageUploadService } from '../services/imageUpload';
 import { DistanceCalculatorService } from '../services/distanceCalculator';
+import { AdminNearbyEditor, NearbyRef } from './AdminNearbyEditor';
 
 interface SiteFormData {
   name: string;
@@ -29,6 +30,10 @@ interface SiteFormData {
     latitude: number;
     longitude: number;
   };
+  // BEGIN nearby-admin
+  subplaces: NearbyRef[];
+  nearby: NearbyRef[];
+  // END nearby-admin
 }
 
 interface AdminPanelAddSiteTabProps {
@@ -47,7 +52,11 @@ export function AdminPanelAddSiteTab({ onSiteAdded }: AdminPanelAddSiteTabProps)
     description: '',
     openingHours: '',
     entranceFee: '',
-    coordinates: { latitude: 0, longitude: 0 }
+    coordinates: { latitude: 0, longitude: 0 },
+    // BEGIN nearby-admin
+    subplaces: [],
+    nearby: []
+    // END nearby-admin
   });
   
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -97,6 +106,10 @@ export function AdminPanelAddSiteTab({ onSiteAdded }: AdminPanelAddSiteTabProps)
       const siteData = {
         ...formData,
         gallery: [],
+        // BEGIN nearby-admin
+        subplaces: formData.subplaces,
+        nearby: formData.nearby,
+        // END nearby-admin
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       };
@@ -172,7 +185,11 @@ export function AdminPanelAddSiteTab({ onSiteAdded }: AdminPanelAddSiteTabProps)
       description: '',
       openingHours: '',
       entranceFee: '',
-      coordinates: { latitude: 0, longitude: 0 }
+      coordinates: { latitude: 0, longitude: 0 },
+      // BEGIN nearby-admin
+      subplaces: [],
+      nearby: []
+      // END nearby-admin
     });
   };
 
@@ -485,6 +502,26 @@ export function AdminPanelAddSiteTab({ onSiteAdded }: AdminPanelAddSiteTabProps)
             />
           </View>
 
+          {/* BEGIN nearby-admin */}
+          {/* Nearby Management Section */}
+          <View style={styles.nearbySection}>
+            <AdminNearbyEditor
+              title="Within This Site"
+              value={formData.subplaces}
+              onChange={(subplaces) => setFormData({ ...formData, subplaces })}
+              testID="subplaces-editor"
+            />
+            
+            <AdminNearbyEditor
+              title="Nearby Attractions"
+              value={formData.nearby}
+              onChange={(nearby) => setFormData({ ...formData, nearby })}
+              maxDistanceKm={2}
+              testID="nearby-editor"
+            />
+          </View>
+          {/* END nearby-admin */}
+
           <Button
             onPress={handleAddSite}
             disabled={isSubmitting}
@@ -660,4 +697,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  // BEGIN nearby-admin
+  nearbySection: {
+    marginTop: 16,
+    marginBottom: 16,
+    gap: 16,
+  },
+  // END nearby-admin
 });
