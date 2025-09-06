@@ -1,5 +1,5 @@
 import { collection, addDoc, query, orderBy, limit, getDocs, serverTimestamp, where } from 'firebase/firestore';
-import { firestore, auth } from './firebase';
+import { firestore, auth, ensureAuthenticated } from './firebase';
 
 export interface AdminLogEntry {
   id?: string;
@@ -13,6 +13,10 @@ export interface AdminLogEntry {
 }
 
 class AdminLogsService {
+  // Ensure authentication before Firestore operations
+  private async ensureAuth(): Promise<boolean> {
+    return await ensureAuthenticated();
+  }
   // Log an admin action
   async logAction(
     action: AdminLogEntry['action'],
@@ -23,8 +27,11 @@ class AdminLogsService {
     }
   ): Promise<void> {
     try {
+      // Ensure authentication before proceeding
+      const isAuthenticated = await this.ensureAuth();
+      
       const currentUser = auth.currentUser;
-      if (!currentUser) {
+      if (!isAuthenticated || !currentUser) {
         console.warn('No authenticated user for logging action');
         return;
       }
@@ -105,6 +112,14 @@ class AdminLogsService {
   // Get recent admin logs
   async getRecentLogs(limitCount: number = 20): Promise<AdminLogEntry[]> {
     try {
+      // Ensure authentication before proceeding
+      const isAuthenticated = await this.ensureAuth();
+      
+      if (!isAuthenticated) {
+        console.warn('User not authenticated for fetching admin logs');
+        return [];
+      }
+      
       const logsQuery = query(
         collection(firestore, 'admin_logs'),
         orderBy('timestamp', 'desc'),
@@ -126,6 +141,14 @@ class AdminLogsService {
   // Get logs for a specific site
   async getLogsForSite(siteId: string): Promise<AdminLogEntry[]> {
     try {
+      // Ensure authentication before proceeding
+      const isAuthenticated = await this.ensureAuth();
+      
+      if (!isAuthenticated) {
+        console.warn('User not authenticated for fetching site logs');
+        return [];
+      }
+      
       const logsQuery = query(
         collection(firestore, 'admin_logs'),
         where('siteId', '==', siteId),
@@ -147,6 +170,14 @@ class AdminLogsService {
   // Get logs by action type
   async getLogsByAction(action: AdminLogEntry['action']): Promise<AdminLogEntry[]> {
     try {
+      // Ensure authentication before proceeding
+      const isAuthenticated = await this.ensureAuth();
+      
+      if (!isAuthenticated) {
+        console.warn('User not authenticated for fetching logs by action');
+        return [];
+      }
+      
       const logsQuery = query(
         collection(firestore, 'admin_logs'),
         where('action', '==', action),
@@ -169,8 +200,12 @@ class AdminLogsService {
   // Get logs for current admin
   async getLogsForCurrentAdmin(): Promise<AdminLogEntry[]> {
     try {
+      // Ensure authentication before proceeding
+      const isAuthenticated = await this.ensureAuth();
+      
       const currentUser = auth.currentUser;
-      if (!currentUser) {
+      if (!isAuthenticated || !currentUser) {
+        console.warn('User not authenticated for fetching admin logs');
         return [];
       }
 
@@ -247,6 +282,14 @@ class AdminLogsService {
   // Clean up old logs (optional maintenance function)
   async cleanupOldLogs(daysToKeep: number = 90): Promise<number> {
     try {
+      // Ensure authentication before proceeding
+      const isAuthenticated = await this.ensureAuth();
+      
+      if (!isAuthenticated) {
+        console.warn('User not authenticated for cleaning up old logs');
+        return 0;
+      }
+      
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
 

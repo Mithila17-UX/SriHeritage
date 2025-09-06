@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { NearbyCard } from './NearbyCard';
+import { databaseService } from '../services/database';
 
 // Re-use existing Site type structure
 interface NearbySectionSite {
@@ -29,6 +30,8 @@ interface NearbySectionProps {
 }
 
 export function NearbySection({ currentSite, onNavigateToSite, isOffline = false }: NearbySectionProps) {
+  const [loadingIds, setLoadingIds] = useState<Set<number>>(new Set());
+  
   // Filter subplaces (within this site)
   const subplaces = currentSite.subplaces || [];
   
@@ -36,6 +39,40 @@ export function NearbySection({ currentSite, onNavigateToSite, isOffline = false
   const nearbyAttractions = (currentSite.nearby || []).filter(site => 
     !site.distanceKm || site.distanceKm <= 2
   );
+  
+  // Handle navigating to a site by loading the full site data first
+  const handleNavigateToSite = async (site: NearbySectionSite) => {
+    try {
+      // Show loading state
+      setLoadingIds(prev => new Set(prev).add(site.id));
+      
+      // Get the complete site information from the database
+      const fullSiteData = await databaseService.getSiteById(site.id);
+      
+      if (fullSiteData) {
+        // Navigate to the existing site information page with complete data
+        onNavigateToSite({
+          ...fullSiteData,
+          distanceKm: site.distanceKm
+        });
+      } else {
+        // If site isn't in local database, navigate with what we have
+        console.log('Site not found in local database, using partial data:', site.id);
+        onNavigateToSite(site);
+      }
+    } catch (error) {
+      console.error('Error loading full site data:', error);
+      // Fall back to navigating with partial data
+      onNavigateToSite(site);
+    } finally {
+      // Remove loading state
+      setLoadingIds(prev => {
+        const next = new Set(prev);
+        next.delete(site.id);
+        return next;
+      });
+    }
+  };
 
   const renderEmptySubplaces = () => (
     <View style={styles.emptyStateContainer}>
@@ -68,9 +105,10 @@ export function NearbySection({ currentSite, onNavigateToSite, isOffline = false
               <NearbyCard
                 key={`subplace-${item.id}`}
                 site={item}
-                onPress={onNavigateToSite}
+                onPress={handleNavigateToSite}
                 isOffline={isOffline}
                 testID={`nearby-card-${item.id}`}
+                isLoading={loadingIds.has(item.id)}
               />
             ))}
           </View>
@@ -88,9 +126,10 @@ export function NearbySection({ currentSite, onNavigateToSite, isOffline = false
               <NearbyCard
                 key={`nearby-${item.id}`}
                 site={item}
-                onPress={onNavigateToSite}
+                onPress={handleNavigateToSite}
                 isOffline={isOffline}
                 testID={`nearby-card-${item.id}`}
+                isLoading={loadingIds.has(item.id)}
               />
             ))}
           </View>

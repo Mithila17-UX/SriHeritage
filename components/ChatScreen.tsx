@@ -21,7 +21,7 @@ export function ChatScreen() {
     clearChatHistory,
     chatSessions,
     currentSessionId
-  } = useChat('default_user'); // You can replace with actual user ID
+  } = useChat('default_user'); // replace with actual user ID after dev
   
   const [inputText, setInputText] = useState('');
   const [showScrollButton, setShowScrollButton] = useState(false);

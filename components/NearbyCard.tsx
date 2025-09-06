@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, Image, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, Image, StyleSheet, ActivityIndicator } from 'react-native';
 import { Badge } from './ui/badge';
 
 // Re-use existing Site type structure
@@ -22,20 +22,22 @@ interface NearbyCardProps {
   onPress: (site: NearbyCardSite) => void;
   isOffline?: boolean;
   testID?: string;
+  isLoading?: boolean;
 }
 
-export function NearbyCard({ site, onPress, isOffline = false, testID }: NearbyCardProps) {
+export function NearbyCard({ site, onPress, isOffline = false, testID, isLoading = false }: NearbyCardProps) {
   const imageUrl = site.image || site.image_url;
   const hours = site.openingHours || site.visiting_hours || 'Hours not available';
   const rating = site.rating || 0;
 
   return (
     <TouchableOpacity
-      style={styles.container}
+      style={[styles.container, isLoading && styles.containerLoading]}
       onPress={() => onPress(site)}
       accessibilityRole="button"
       accessibilityLabel={site.name}
       testID={testID}
+      disabled={isLoading}
     >
       {/* Thumbnail */}
       <View style={styles.thumbnailContainer}>
@@ -90,9 +92,13 @@ export function NearbyCard({ site, onPress, isOffline = false, testID }: NearbyC
         </Text>
       </View>
 
-      {/* Chevron */}
+      {/* Chevron or Loading Indicator */}
       <View style={styles.chevronContainer}>
-        <Text style={styles.chevron}>›</Text>
+        {isLoading ? (
+          <ActivityIndicator size="small" color="#EA580C" />
+        ) : (
+          <Text style={styles.chevron}>›</Text>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -115,6 +121,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 2,
+  },
+  containerLoading: {
+    opacity: 0.7,
   },
   thumbnailContainer: {
     width: 80,

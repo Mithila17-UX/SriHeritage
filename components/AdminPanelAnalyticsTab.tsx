@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { Card, CardContent, CardHeader } from './ui/card';
 import { collection, getDocs, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
-import { firestore } from '../services/firebase';
+import { firestore, auth } from '../services/firebase';
 
 interface AnalyticsData {
   totalSites: number;
@@ -36,15 +36,42 @@ export function AdminPanelAnalyticsTab() {
     loadRecentAdminLogs();
     
     // Set up real-time listener for sites collection to update analytics
-    const unsubscribe = onSnapshot(
-      collection(firestore, 'sites'),
-      (snapshot) => {
-        calculateAnalyticsFromSnapshot(snapshot);
-      },
-      (error) => {
-        console.error('Error listening to sites for analytics:', error);
-      }
-    );
+    let unsubscribe = () => {};
+    
+    // Check if user is authenticated before setting up listeners
+    if (auth.currentUser) {
+      unsubscribe = onSnapshot(
+        collection(firestore, 'sites'),
+        (snapshot) => {
+          calculateAnalyticsFromSnapshot(snapshot);
+        },
+        (error) => {
+          console.error('Error listening to sites for analytics:', error);
+          // Fallback to non-real-time data on error
+          loadAnalyticsData();
+        }
+      );
+    } else {
+      // If not authenticated, set up auth state listener
+      const authUnsubscribe = auth.onAuthStateChanged((user) => {
+        if (user) {
+          // User is now signed in, set up Firestore listener
+          unsubscribe = onSnapshot(
+            collection(firestore, 'sites'),
+            (snapshot) => {
+              calculateAnalyticsFromSnapshot(snapshot);
+            },
+            (error) => {
+              console.error('Error listening to sites for analytics:', error);
+              // Fallback to non-real-time data on error
+              loadAnalyticsData();
+            }
+          );
+          // No need to continue listening for auth changes
+          authUnsubscribe();
+        }
+      });
+    }
 
     return () => unsubscribe();
   }, []);

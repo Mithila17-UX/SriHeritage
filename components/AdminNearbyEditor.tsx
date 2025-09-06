@@ -79,6 +79,53 @@ export function AdminNearbyEditor({
     
     onRecalculateDistances(recalc);
   }, [onRecalculateDistances, origin, value, onChange]);
+  
+  // Auto-search for nearby sites when component is expanded and has origin coordinates
+  useEffect(() => {
+    if (isExpanded && origin && searchResults.length === 0 && !isSearching) {
+      // Auto-search for nearby sites
+      const autoSearchNearby = async () => {
+        setIsSearching(true);
+        try {
+          // Get all sites
+          const allSites = await databaseService.getAllSites();
+          
+          // Filter by distance (within 4km)
+          const nearbySites = allSites.filter(site => {
+            // Don't include sites that are already added
+            const existingIds = value.map(item => item.id);
+            if (existingIds.includes(site.id.toString())) return false;
+            
+            const siteCoords = siteToCoords(site);
+            if (!siteCoords) return false;
+            
+            const distance = kmBetween(origin, siteCoords);
+            return distance <= 4;
+          });
+          
+          // Sort by distance
+          nearbySites.sort((a, b) => {
+            const aCords = siteToCoords(a);
+            const bCords = siteToCoords(b);
+            if (!aCords || !bCords) return 0;
+            
+            const aDistance = kmBetween(origin, aCords);
+            const bDistance = kmBetween(origin, bCords);
+            return aDistance - bDistance;
+          });
+          
+          // Limit to 10 results for performance
+          setSearchResults(nearbySites.slice(0, 10));
+        } catch (error) {
+          console.error('Error auto-searching nearby sites:', error);
+        } finally {
+          setIsSearching(false);
+        }
+      };
+      
+      autoSearchNearby();
+    }
+  }, [isExpanded, origin, value]);
 
   // BEGIN nearby-admin
   const handleSearch = async (query: string) => {
@@ -101,7 +148,29 @@ export function AdminNearbyEditor({
       
       // Filter out already added sites
       const existingIds = value.map(item => item.id);
-      const filteredSites = sites.filter(site => !existingIds.includes(site.id.toString()));
+      let filteredSites = sites.filter(site => !existingIds.includes(site.id.toString()));
+      
+      // Filter sites by distance if origin is provided (max 4km)
+      if (origin && filteredSites.length > 0) {
+        filteredSites = filteredSites.filter(site => {
+          const siteCoords = siteToCoords(site);
+          if (!siteCoords) return false;
+          
+          const distance = kmBetween(origin, siteCoords);
+          return distance <= 4; // Only show sites within 4km
+        });
+        
+        // Sort by distance
+        filteredSites.sort((a, b) => {
+          const aCords = siteToCoords(a);
+          const bCords = siteToCoords(b);
+          if (!aCords || !bCords) return 0;
+          
+          const aDistance = kmBetween(origin, aCords);
+          const bDistance = kmBetween(origin, bCords);
+          return aDistance - bDistance;
+        });
+      }
       
       setSearchResults(filteredSites);
     } catch (error) {
@@ -120,10 +189,31 @@ export function AdminNearbyEditor({
       ? kmBetween(origin, siteCoords)
       : 0;
     
+    // If distance is more than 4km, show warning but allow adding
+    if (computed > 4) {
+      Alert.alert(
+        'Distance Warning',
+        `This site is ${computed.toFixed(2)}km away, which is beyond the recommended 4km range. Add anyway?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Add Anyway', 
+            onPress: () => {
+              addSiteWithDistance(site, computed);
+            }
+          }
+        ]
+      );
+    } else {
+      addSiteWithDistance(site, computed);
+    }
+  };
+  
+  const addSiteWithDistance = (site: Site, distance: number) => {
     const newItem: NearbyRef = {
       id: site.id.toString(),
       name: site.name,
-      distanceKm: Number.isFinite(computed) ? Number(computed.toFixed(2)) : 0,
+      distanceKm: Number.isFinite(distance) ? Number(distance.toFixed(2)) : 0,
       category: site.category || ''
     };
     
@@ -191,6 +281,9 @@ export function AdminNearbyEditor({
     if (maxDistanceKm && distance > maxDistanceKm) {
       return `⚠️ Distance exceeds ${maxDistanceKm} km recommendation`;
     }
+    if (distance > 4) {
+      return `⚠️ This site is ${distance.toFixed(1)} km away (beyond recommended 4 km)`;
+    }
     return null;
   };
   // END nearby-admin
@@ -229,6 +322,17 @@ export function AdminNearbyEditor({
                 }}
                 style={styles.searchInput}
               />
+              {origin && (
+                <TouchableOpacity 
+                  style={styles.nearbyButton}
+                  onPress={() => handleSearch('')}
+                  disabled={isSearching}
+                >
+                  <Text style={styles.nearbyButtonText}>
+                    {isSearching ? '🔍 Searching...' : '🔍 Show Nearby Sites (4km)'}
+                  </Text>
+                </TouchableOpacity>
+              )}
               {isSearching && (
                 <Text style={styles.searchingText}>🔍 Searching...</Text>
               )}
@@ -236,23 +340,46 @@ export function AdminNearbyEditor({
 
             {/* Search Results */}
             {searchResults.length > 0 && (
-              <ScrollView style={styles.searchResults} nestedScrollEnabled>
-                {searchResults.map((site) => (
-                  <TouchableOpacity
-                    key={site.id}
-                    style={styles.searchResultItem}
-                    onPress={() => handleAddSite(site)}
-                  >
-                    <View style={styles.searchResultContent}>
-                      <Text style={styles.searchResultName}>{site.name}</Text>
-                      <Text style={styles.searchResultDetails}>
-                        {`${site.location || 'Unknown'} • ${site.category || 'Uncategorized'}`}
-                      </Text>
-                    </View>
-                    <Text style={styles.addIcon}>+</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+              <>
+                <View style={styles.searchResultsHeader}>
+                  <Text style={styles.searchResultsCount}>
+                    {searchResults.length} site{searchResults.length !== 1 ? 's' : ''} found
+                    {origin ? ' (within 4km)' : ''}
+                  </Text>
+                </View>
+                <ScrollView style={styles.searchResults} nestedScrollEnabled>
+                  {searchResults.map((site) => {
+                    // Calculate distance for display in search results
+                    const siteCoords = siteToCoords(site);
+                    const distance = (origin && siteCoords) 
+                      ? kmBetween(origin, siteCoords) 
+                      : null;
+                      
+                    return (
+                      <TouchableOpacity
+                        key={site.id}
+                        style={styles.searchResultItem}
+                        onPress={() => handleAddSite(site)}
+                      >
+                        <View style={styles.searchResultContent}>
+                          <Text style={styles.searchResultName}>{site.name}</Text>
+                          <Text style={styles.searchResultDetails}>
+                            {`${site.location || 'Unknown'} • ${site.category || 'Uncategorized'}`}
+                            {distance !== null && ` • ${distance.toFixed(2)} km`}
+                          </Text>
+                        </View>
+                        <Text style={styles.addIcon}>+</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </>
+            )}
+            
+            {searchResults.length === 0 && !isSearching && searchQuery.trim() !== '' && (
+              <View style={styles.emptySearchState}>
+                <Text style={styles.emptySearchText}>No matching sites found within 4km range</Text>
+              </View>
             )}
           </View>
 
@@ -450,11 +577,35 @@ export function AdminNearbyEditor({
     borderColor: '#D1D5DB',
     backgroundColor: '#F9FAFB',
   },
+  nearbyButton: {
+    backgroundColor: '#3B82F6',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  nearbyButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   searchingText: {
     fontSize: 12,
     color: '#6B7280',
     marginTop: 4,
     fontStyle: 'italic',
+  },
+  searchResultsHeader: {
+    marginVertical: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  searchResultsCount: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#4B5563',
   },
   searchResults: {
     maxHeight: 200,
@@ -469,6 +620,20 @@ export function AdminNearbyEditor({
     padding: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
+  },
+  emptySearchState: {
+    padding: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    marginTop: 8,
+    backgroundColor: '#F9FAFB',
+  },
+  emptySearchText: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontStyle: 'italic',
   },
   searchResultContent: {
     flex: 1,

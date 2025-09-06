@@ -19,6 +19,7 @@ import { routingServiceOSM } from '../services/routingServiceOSM';
 import { LeafletPageService } from '../services/leafletPage';
 import { reviewService, Review as FirestoreReview, SiteRatingStats } from '../services/reviewService';
 import { authService } from '../services/auth';
+import { databaseService } from '../services/database';
 // BEGIN nearby - Import new components
 import { NearbySection } from './NearbySection';
 // END nearby
@@ -988,17 +989,44 @@ export function SiteInformationPage({
   }), [site, mockSubplaces, mockNearbyAttractions]);
 
   // Handle navigation to a subplace or nearby site
-  const handleNavigateToSite = useCallback((targetSite: any) => {
-    // Use existing navigation pattern if available, otherwise push to stack
-    // This maintains compatibility with the existing navigation system
+  const handleNavigateToSite = useCallback(async (targetSite: any) => {
+    console.log('Navigating to site:', targetSite.id, targetSite.name);
+    
+    // If this is a reference with just an ID, try to get the full site data
+    if (targetSite.id && (!targetSite.description || !targetSite.location)) {
+      try {
+        // Load the complete site data
+        const fullSite = await databaseService.getSiteById(targetSite.id);
+        if (fullSite) {
+          console.log('Found full site data for:', fullSite.name);
+          // Preserve distance from original reference
+          const enhancedSite = {
+            ...fullSite,
+            distanceKm: targetSite.distanceKm
+          };
+          
+          // Navigate with the full site data
+          if (typeof onNavigateToSite === 'function') {
+            onNavigateToSite(enhancedSite);
+          } else {
+            Alert.alert('Navigation', `Would navigate to ${enhancedSite.name} (ID: ${enhancedSite.id})`);
+          }
+          return;
+        }
+      } catch (error) {
+        console.error('Error getting full site data:', error);
+        // Continue with fallback below
+      }
+    }
+    
+    // Navigate with whatever data we have
     if (typeof onNavigateToSite === 'function') {
       onNavigateToSite(targetSite);
     } else {
-      // Fallback: If no onNavigateToSite prop, we could navigate via React Navigation
-      // For now, we'll show an alert as a placeholder
+      // Fallback: If no onNavigateToSite prop, show an alert
       Alert.alert('Navigation', `Would navigate to ${targetSite.name}`);
     }
-  }, []);
+  }, [onNavigateToSite]);
   // END nearby
 
   return (
