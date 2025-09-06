@@ -29,7 +29,23 @@ export interface Site {
     latitude: number;
     longitude: number;
   };
+  // BEGIN nearby - Optional fields for nearby functionality
+  subplaces?: SiteSubplace[];
+  nearby?: NearbySite[];
+  // END nearby
 }
+
+// BEGIN nearby - New types for nearby functionality
+export type DistanceKm = number;
+
+export type SiteSubplace = Omit<Site, 'subplaces' | 'nearby'> & {
+  distanceKm?: DistanceKm; // optional for subplaces
+};
+
+export type NearbySite = Omit<Site, 'subplaces' | 'nearby'> & {
+  distanceKm?: DistanceKm; // used for nearby attractions
+};
+// END nearby
 
 export interface FavoriteSite {
   id: number;
@@ -171,6 +187,28 @@ class DatabaseService {
         );
       `);
 
+      // BEGIN nearby-admin - Add nearby columns if they don't exist
+      try {
+        await this.db.execAsync(`
+          ALTER TABLE sites ADD COLUMN nearby TEXT;
+        `);
+        console.log('✅ Added nearby column to sites table');
+      } catch (error) {
+        // Column might already exist, ignore error
+        console.log('ℹ️ nearby column already exists or error adding it');
+      }
+
+      try {
+        await this.db.execAsync(`
+          ALTER TABLE sites ADD COLUMN subplaces TEXT;
+        `);
+        console.log('✅ Added subplaces column to sites table');
+      } catch (error) {
+        // Column might already exist, ignore error
+        console.log('ℹ️ subplaces column already exists or error adding it');
+      }
+      // END nearby-admin
+
       // Favorite sites table
       await this.db.execAsync(`
         CREATE TABLE IF NOT EXISTS favorite_sites (
@@ -301,6 +339,33 @@ class DatabaseService {
     }
   }
 
+  // BEGIN nearby-admin - Helper method to parse nearby data from SQLite
+  private parseSiteData(rawSite: any): Site {
+    const site = rawSite as Site;
+    
+    // Parse nearby and subplaces JSON if they exist
+    if (rawSite.nearby && typeof rawSite.nearby === 'string') {
+      try {
+        site.nearby = JSON.parse(rawSite.nearby);
+      } catch (error) {
+        console.warn('Failed to parse nearby data for site:', rawSite.id);
+        site.nearby = [];
+      }
+    }
+    
+    if (rawSite.subplaces && typeof rawSite.subplaces === 'string') {
+      try {
+        site.subplaces = JSON.parse(rawSite.subplaces);
+      } catch (error) {
+        console.warn('Failed to parse subplaces data for site:', rawSite.id);
+        site.subplaces = [];
+      }
+    }
+    
+    return site;
+  }
+  // END nearby-admin
+
   // Sites operations
   async getAllSites(): Promise<Site[]> {
     if (!this.db) {
@@ -310,7 +375,9 @@ class DatabaseService {
     
     try {
       const result = await this.db.getAllAsync('SELECT * FROM sites ORDER BY name ASC');
-      return result as Site[];
+      // BEGIN nearby-admin
+      return result.map(site => this.parseSiteData(site));
+      // END nearby-admin
     } catch (error) {
       console.error('Failed to get all sites:', error);
       console.log('🔄 Attempting to reinitialize database...');
@@ -320,7 +387,9 @@ class DatabaseService {
       try {
         await this.initializeDatabase();
         const retryResult = await this.db!.getAllAsync('SELECT * FROM sites ORDER BY name ASC');
-        return retryResult as Site[];
+        // BEGIN nearby-admin
+        return retryResult.map(site => this.parseSiteData(site));
+        // END nearby-admin
       } catch (retryError) {
         console.error('Failed to get sites after reinitialize:', retryError);
         return [];
@@ -336,7 +405,9 @@ class DatabaseService {
     
     try {
       const result = await this.db.getFirstAsync('SELECT * FROM sites WHERE id = ?', [id]);
-      return result as Site | null;
+      // BEGIN nearby-admin
+      return result ? this.parseSiteData(result) : null;
+      // END nearby-admin
     } catch (error) {
       console.error('Failed to get site by id:', error);
       console.log('🔄 Attempting to reinitialize database for getSiteById...');
@@ -346,7 +417,9 @@ class DatabaseService {
       try {
         await this.initializeDatabase();
         const retryResult = await this.db!.getFirstAsync('SELECT * FROM sites WHERE id = ?', [id]);
-        return retryResult as Site | null;
+        // BEGIN nearby-admin
+        return retryResult ? this.parseSiteData(retryResult) : null;
+        // END nearby-admin
       } catch (retryError) {
         console.error('Failed to get site by id after reinitialize:', retryError);
         return null;
@@ -363,7 +436,9 @@ class DatabaseService {
         'SELECT * FROM sites WHERE name LIKE ? OR description LIKE ? OR location LIKE ? ORDER BY name ASC',
         [searchQuery, searchQuery, searchQuery]
       );
-      return result as Site[];
+      // BEGIN nearby-admin
+      return result.map(site => this.parseSiteData(site));
+      // END nearby-admin
     } catch (error) {
       console.error('Failed to search sites:', error);
       throw error;
@@ -378,7 +453,9 @@ class DatabaseService {
         'SELECT * FROM sites WHERE category = ? ORDER BY name ASC',
         [category]
       );
-      return result as Site[];
+      // BEGIN nearby-admin
+      return result.map(site => this.parseSiteData(site));
+      // END nearby-admin
     } catch (error) {
       console.error('Failed to get sites by category:', error);
       throw error;
@@ -604,6 +681,11 @@ class DatabaseService {
       // Check if site exists by ID first (this is the primary key from Firestore)
       const existingSite = await this.getSiteById(site.id);
       
+      // BEGIN nearby-admin - Prepare nearby data for SQLite storage
+      const nearbyJson = site.nearby ? JSON.stringify(site.nearby) : null;
+      const subplacesJson = site.subplaces ? JSON.stringify(site.subplaces) : null;
+      // END nearby-admin
+      
       if (existingSite) {
         // Update existing site by ID
         await this.db.runAsync(
@@ -619,7 +701,9 @@ class DatabaseService {
             significance = ?,
             visiting_hours = ?,
             entry_fee = ?,
-            updated_at = datetime('now')
+            updated_at = datetime('now'),
+            nearby = ?,
+            subplaces = ?
           WHERE id = ?`,
           [
             site.name || '',
@@ -633,6 +717,10 @@ class DatabaseService {
             site.significance || '',
             site.openingHours || site.visiting_hours || '',
             site.entranceFee || site.entry_fee || '',
+            // BEGIN nearby-admin
+            nearbyJson,
+            subplacesJson,
+            // END nearby-admin
             site.id
           ]
         );
@@ -643,8 +731,8 @@ class DatabaseService {
           `INSERT INTO sites (
             id, name, description, location, latitude, longitude, category,
             image_url, historical_period, significance, visiting_hours, entry_fee,
-            created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+            nearby, subplaces, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
           [
             site.id,
             site.name || '',
@@ -657,7 +745,11 @@ class DatabaseService {
             site.historical_period || '',
             site.significance || '',
             site.openingHours || site.visiting_hours || '',
-            site.entranceFee || site.entry_fee || ''
+            site.entranceFee || site.entry_fee || '',
+            // BEGIN nearby-admin
+            nearbyJson,
+            subplacesJson
+            // END nearby-admin
           ]
         );
         console.log('✅ Inserted new site from Firestore:', site.id, site.name);

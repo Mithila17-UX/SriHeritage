@@ -168,8 +168,8 @@ class ChatHistoryService {
 
       // Sort in memory since we can't use orderBy in the query
       sessions.sort((a, b) => {
-        const dateA = a.updatedAt.toDate ? a.updatedAt.toDate() : new Date(a.updatedAt);
-        const dateB = b.updatedAt.toDate ? b.updatedAt.toDate() : new Date(b.updatedAt);
+        const dateA = a.updatedAt instanceof Timestamp ? a.updatedAt.toDate() : new Date(a.updatedAt as any);
+        const dateB = b.updatedAt instanceof Timestamp ? b.updatedAt.toDate() : new Date(b.updatedAt as any);
         return dateB.getTime() - dateA.getTime();
       });
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, Image } from 'react-native';
 import { Input } from './ui/input';
+import { Textarea } from './ui/textarea';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
@@ -11,6 +12,7 @@ import { databaseService } from '../services/database';
 import { ImagePickerModal } from './ImagePickerModal';
 import { ImageUploadService } from '../services/imageUpload';
 import { DistanceCalculatorService, AVAILABLE_DISTRICTS } from '../services/distanceCalculator';
+import { AdminNearbyEditor, NearbyRef } from './AdminNearbyEditor';
 
 interface Site {
   id: string;
@@ -29,6 +31,10 @@ interface Site {
     latitude: number;
     longitude: number;
   };
+  // BEGIN nearby-admin
+  subplaces?: NearbyRef[];
+  nearby?: NearbyRef[];
+  // END nearby-admin
 }
 
 interface AdminPanelEditSiteModalProps {
@@ -36,9 +42,20 @@ interface AdminPanelEditSiteModalProps {
   site: Site | null;
   onClose: () => void;
   onSiteUpdated: (updatedSite: Site) => void;
+  // BEGIN nearby-admin
+  onNavigateToSite?: (siteId: string) => void;
+  // END nearby-admin
 }
 
-export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated }: AdminPanelEditSiteModalProps) {
+export function AdminPanelEditSiteModal({ 
+  visible, 
+  site, 
+  onClose, 
+  onSiteUpdated,
+  // BEGIN nearby-admin
+  onNavigateToSite: propOnNavigateToSite
+  // END nearby-admin
+}: AdminPanelEditSiteModalProps) {
   const [formData, setFormData] = useState({
     name: '',
     location: '',
@@ -57,6 +74,10 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
   const [isUpdating, setIsUpdating] = useState(false);
   const [showImagePicker, setShowImagePicker] = useState(false);
   const [isCalculatingDistance, setIsCalculatingDistance] = useState(false);
+  // BEGIN nearby-admin
+  const [subplaces, setSubplaces] = useState<NearbyRef[]>([]);
+  const [nearby, setNearby] = useState<NearbyRef[]>([]);
+  // END nearby-admin
 
   useEffect(() => {
     if (site) {
@@ -74,6 +95,12 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
         latitude: site.coordinates?.latitude?.toString() || '',
         longitude: site.coordinates?.longitude?.toString() || ''
       });
+      
+      // BEGIN nearby-admin
+      // Initialize nearby editors from site data
+      setSubplaces(site.subplaces || []);
+      setNearby(site.nearby || []);
+      // END nearby-admin
     }
   }, [site]);
 
@@ -142,7 +169,7 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
     
     setIsCalculatingDistance(true);
     try {
-      const calculatedDistance = DistanceCalculatorService.autoCalculateDistance(
+      const calculatedDistance = await DistanceCalculatorService.autoCalculateDistance(
         district.trim(),
         lat,
         lon
@@ -186,7 +213,7 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
     
     setIsCalculatingDistance(true);
     try {
-      const calculatedDistance = DistanceCalculatorService.autoCalculateDistance(
+      const calculatedDistance = await DistanceCalculatorService.autoCalculateDistance(
         district.trim(),
         lat,
         lon
@@ -256,7 +283,11 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
         coordinates: {
           latitude: latitude,
           longitude: longitude
-        }
+        },
+        // BEGIN nearby-admin
+        subplaces: subplaces,
+        nearby: nearby
+        // END nearby-admin
       };
 
       // Update Firestore
@@ -272,14 +303,33 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
         description: updatedSite.description,
         openingHours: updatedSite.openingHours,
         entranceFee: updatedSite.entranceFee,
-        coordinates: updatedSite.coordinates
+        coordinates: updatedSite.coordinates,
+        // BEGIN nearby-admin
+        subplaces: subplaces,
+        nearby: nearby
+        // END nearby-admin
       });
 
-      // Update local SQLite
+      // Update local SQLite (excluding the nearby fields for now, they'll be synced later)
       await databaseService.insertOrUpdateSite({
-        ...updatedSite,
         id: parseInt(site.id),
-        gallery: JSON.stringify(site.gallery || [])
+        name: updatedSite.name,
+        location: updatedSite.location,
+        district: updatedSite.district,
+        distance: updatedSite.distance,
+        rating: updatedSite.rating,
+        image: updatedSite.image,
+        category: updatedSite.category,
+        description: updatedSite.description,
+        openingHours: updatedSite.openingHours,
+        entranceFee: updatedSite.entranceFee,
+        coordinates: updatedSite.coordinates,
+        gallery: JSON.stringify(site.gallery || []),
+        // Other required fields
+        latitude: latitude,
+        longitude: longitude,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       });
 
       console.log('✅ Site updated successfully:', updatedSite.name);
@@ -360,8 +410,8 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
               value={formData.distance}
               onChangeText={(text) => setFormData(prev => ({ ...prev, distance: text }))}
               placeholder="e.g., 2.5 km from city center"
-              style={[styles.input, isCalculatingDistance && styles.inputCalculating]}
-              editable={!isCalculatingDistance}
+              style={isCalculatingDistance ? {...styles.input, ...styles.inputCalculating} : styles.input}
+              disabled={isCalculatingDistance}
             />
             <Text style={styles.helpText}>
               💡 Distance is automatically calculated from district center when coordinates are entered
@@ -375,7 +425,7 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
               value={formData.rating}
               onChangeText={(text) => setFormData(prev => ({ ...prev, rating: text }))}
               placeholder="Enter rating"
-              keyboardType="decimal-pad"
+              keyboardType="numeric"
               style={styles.input}
             />
           </View>
@@ -398,7 +448,11 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
                 value={formData.image}
                 onChangeText={(text) => setFormData(prev => ({ ...prev, image: text }))}
                 placeholder="Enter image URL manually"
-                style={[styles.input, !validateImageUrl(formData.image) && formData.image ? styles.inputError : null]}
+                style={
+                  (!validateImageUrl(formData.image) && formData.image) 
+                    ? {...styles.input, ...styles.inputError} 
+                    : styles.input
+                }
               />
             </View>
             
@@ -438,13 +492,11 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
           {/* Description */}
           <View style={styles.formGroup}>
             <Label style={styles.label}>Description</Label>
-            <Input
+            <Textarea
               value={formData.description}
               onChangeText={(text) => setFormData(prev => ({ ...prev, description: text }))}
               placeholder="Enter site description"
-              multiline
-              numberOfLines={4}
-              style={[styles.input, styles.textArea]}
+              style={{...styles.input, ...styles.textArea}}
             />
           </View>
 
@@ -478,7 +530,7 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
                 value={formData.latitude}
                 onChangeText={(text) => setFormData(prev => ({ ...prev, latitude: text }))}
                 placeholder="e.g., 7.2906"
-                keyboardType="decimal-pad"
+                keyboardType="numeric"
                 style={styles.input}
               />
             </View>
@@ -489,11 +541,31 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
                 value={formData.longitude}
                 onChangeText={(text) => setFormData(prev => ({ ...prev, longitude: text }))}
                 placeholder="e.g., 80.6337"
-                keyboardType="decimal-pad"
+                keyboardType="numeric"
                 style={styles.input}
               />
             </View>
           </View>
+
+          {/* BEGIN nearby-admin */}
+          {/* Nearby Management Section */}
+          <View style={styles.nearbySection}>
+            <AdminNearbyEditor
+              title="Within This Site"
+              value={subplaces}
+              onChange={setSubplaces}
+              testID="subplaces-editor"
+            />
+            
+            <AdminNearbyEditor
+              title="Nearby Attractions"
+              value={nearby}
+              onChange={setNearby}
+              maxDistanceKm={2}
+              testID="nearby-editor"
+            />
+          </View>
+          {/* END nearby-admin */}
 
           {/* Manual Calculate Button */}
           {formData.district && formData.latitude && formData.longitude && (
@@ -509,21 +581,42 @@ export function AdminPanelEditSiteModal({ visible, site, onClose, onSiteUpdated 
           )}
 
           {/* Update Button */}
-          <TouchableOpacity
-            style={[styles.updateButton, isUpdating && styles.updateButtonDisabled]}
-            onPress={handleUpdateSite}
-            disabled={isUpdating}
-          >
-            <Text style={styles.updateButtonText}>
-              {isUpdating ? '🔄 Updating...' : '✅ Update Site'}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.buttonSection}>
+            {/* BEGIN nearby-admin */}
+            {/* Preview Nearby Button */}
+            <TouchableOpacity
+              style={styles.previewButton}
+              onPress={() => {
+                // Navigate to SiteInformationPage for preview
+                if (propOnNavigateToSite) {
+                  propOnNavigateToSite(site.id);
+                } else {
+                  Alert.alert('Preview', 'Navigate to site information page to preview nearby functionality.');
+                }
+              }}
+            >
+              <Text style={styles.previewButtonText}>
+                👁️ Preview Nearby Tab
+              </Text>
+            </TouchableOpacity>
+            {/* END nearby-admin */}
+            
+            <TouchableOpacity
+              style={[styles.updateButton, isUpdating && styles.updateButtonDisabled]}
+              onPress={handleUpdateSite}
+              disabled={isUpdating}
+            >
+              <Text style={styles.updateButtonText}>
+                {isUpdating ? '🔄 Updating...' : '✅ Update Site'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </ScrollView>
 
         {/* Image Picker Modal */}
         <ImagePickerModal
           visible={showImagePicker}
-          onClose={() => setShowImagePicker(false)}
+          onCancel={() => setShowImagePicker(false)}
           onImageSelected={handleImageSelected}
         />
       </View>
@@ -686,4 +779,26 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
+  // BEGIN nearby-admin
+  nearbySection: {
+    marginTop: 16,
+    marginBottom: 16,
+    gap: 16,
+  },
+  buttonSection: {
+    gap: 12,
+    marginTop: 20,
+  },
+  previewButton: {
+    backgroundColor: '#8B5CF6',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  previewButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  // END nearby-admin
 });

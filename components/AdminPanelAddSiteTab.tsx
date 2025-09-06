@@ -13,6 +13,7 @@ import { databaseService } from '../services/database';
 import { adminLogsService } from '../services/adminLogs';
 import { ImageUploadService } from '../services/imageUpload';
 import { DistanceCalculatorService } from '../services/distanceCalculator';
+import { AdminNearbyEditor, NearbyRef } from './AdminNearbyEditor';
 
 interface SiteFormData {
   name: string;
@@ -29,6 +30,10 @@ interface SiteFormData {
     latitude: number;
     longitude: number;
   };
+  // BEGIN nearby-admin
+  subplaces: NearbyRef[];
+  nearby: NearbyRef[];
+  // END nearby-admin
 }
 
 interface AdminPanelAddSiteTabProps {
@@ -47,7 +52,11 @@ export function AdminPanelAddSiteTab({ onSiteAdded }: AdminPanelAddSiteTabProps)
     description: '',
     openingHours: '',
     entranceFee: '',
-    coordinates: { latitude: 0, longitude: 0 }
+    coordinates: { latitude: 0, longitude: 0 },
+    // BEGIN nearby-admin
+    subplaces: [],
+    nearby: []
+    // END nearby-admin
   });
   
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -97,6 +106,10 @@ export function AdminPanelAddSiteTab({ onSiteAdded }: AdminPanelAddSiteTabProps)
       const siteData = {
         ...formData,
         gallery: [],
+        // BEGIN nearby-admin
+        subplaces: formData.subplaces,
+        nearby: formData.nearby,
+        // END nearby-admin
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       };
@@ -172,7 +185,11 @@ export function AdminPanelAddSiteTab({ onSiteAdded }: AdminPanelAddSiteTabProps)
       description: '',
       openingHours: '',
       entranceFee: '',
-      coordinates: { latitude: 0, longitude: 0 }
+      coordinates: { latitude: 0, longitude: 0 },
+      // BEGIN nearby-admin
+      subplaces: [],
+      nearby: []
+      // END nearby-admin
     });
   };
 
@@ -189,7 +206,7 @@ export function AdminPanelAddSiteTab({ onSiteAdded }: AdminPanelAddSiteTabProps)
     
     setIsCalculatingDistance(true);
     try {
-      const calculatedDistance = DistanceCalculatorService.autoCalculateDistance(
+      const calculatedDistance = await DistanceCalculatorService.autoCalculateDistance(
         district,
         coordinates.latitude,
         coordinates.longitude
@@ -312,8 +329,8 @@ export function AdminPanelAddSiteTab({ onSiteAdded }: AdminPanelAddSiteTabProps)
                 placeholder="Will auto-calculate from district center"
                 value={formData.distance}
                 onChangeText={(text) => setFormData({ ...formData, distance: text })}
-                style={[styles.input, isCalculatingDistance && styles.inputCalculating]}
-                editable={!isCalculatingDistance}
+                style={isCalculatingDistance ? {...styles.input, ...styles.inputCalculating} : styles.input}
+                disabled={isCalculatingDistance}
               />
               <Text style={styles.helpText}>
                 💡 Auto-calculated from district center when coordinates are set
@@ -443,7 +460,11 @@ export function AdminPanelAddSiteTab({ onSiteAdded }: AdminPanelAddSiteTabProps)
                 placeholder="Enter image URL manually"
                 value={formData.image}
                 onChangeText={(text) => setFormData({ ...formData, image: text })}
-                style={[styles.input, !validateImageUrl(formData.image) && formData.image ? styles.inputError : null]}
+                style={
+                  (!validateImageUrl(formData.image) && formData.image) 
+                    ? {...styles.input, ...styles.inputError} 
+                    : styles.input
+                }
               />
             </View>
             
@@ -481,10 +502,30 @@ export function AdminPanelAddSiteTab({ onSiteAdded }: AdminPanelAddSiteTabProps)
             />
           </View>
 
+          {/* BEGIN nearby-admin */}
+          {/* Nearby Management Section */}
+          <View style={styles.nearbySection}>
+            <AdminNearbyEditor
+              title="Within This Site"
+              value={formData.subplaces}
+              onChange={(subplaces) => setFormData({ ...formData, subplaces })}
+              testID="subplaces-editor"
+            />
+            
+            <AdminNearbyEditor
+              title="Nearby Attractions"
+              value={formData.nearby}
+              onChange={(nearby) => setFormData({ ...formData, nearby })}
+              maxDistanceKm={2}
+              testID="nearby-editor"
+            />
+          </View>
+          {/* END nearby-admin */}
+
           <Button
             onPress={handleAddSite}
             disabled={isSubmitting}
-            style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
+            style={isSubmitting ? {...styles.submitButton, ...styles.submitButtonDisabled} : styles.submitButton}
           >
             {isSubmitting ? 'Adding Site...' : 'Add Heritage Site'}
           </Button>
@@ -493,9 +534,8 @@ export function AdminPanelAddSiteTab({ onSiteAdded }: AdminPanelAddSiteTabProps)
 
       <ImagePickerModal
         visible={showImagePicker}
-        onClose={() => setShowImagePicker(false)}
+        onCancel={() => setShowImagePicker(false)}
         onImageSelected={handleImageSelected}
-        title="Select Main Image"
       />
     </ScrollView>
   );
@@ -657,4 +697,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  // BEGIN nearby-admin
+  nearbySection: {
+    marginTop: 16,
+    marginBottom: 16,
+    gap: 16,
+  },
+  // END nearby-admin
 });
