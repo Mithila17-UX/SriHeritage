@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { NearbyCard } from './NearbyCard';
-import { databaseService } from '../services/database';
+import { databaseService, Site } from '../services/database';
+import { useSites } from '../hooks/useSites';
+import { formatKm } from '../utils/geo';
 
 // Re-use existing Site type structure
 interface NearbySectionSite {
@@ -19,70 +21,72 @@ interface NearbySectionSite {
 }
 
 interface NearbySectionProps {
-  currentSite: {
-    id: number;
-    name: string;
-    subplaces?: NearbySectionSite[];
-    nearby?: NearbySectionSite[];
-  };
-  onNavigateToSite: (site: NearbySectionSite) => void;
+  currentSite: Site;
+  onNavigateToSite: (siteId: string | number) => void;
   isOffline?: boolean;
 }
 
 export function NearbySection({ currentSite, onNavigateToSite, isOffline = false }: NearbySectionProps) {
-  const [loadingIds, setLoadingIds] = useState<Set<number>>(new Set());
+  const { getSiteById, computingNearby } = useSites();
   
-  // Filter subplaces (within this site)
-  const subplaces = currentSite.subplaces || [];
+  // Get computed relations from the site
+  const withinRelations = currentSite.computedWithin || [];
+  const nearbyRelations = currentSite.computedNearby || [];
   
-  // Filter nearby attractions within 2km
-  const nearbyAttractions = (currentSite.nearby || []).filter(site => 
-    !site.distanceKm || site.distanceKm <= 2
-  );
+  console.log('🏛️  NearbySection for site:', currentSite.name);
+  console.log('📊 Within relations:', withinRelations.length);
+  console.log('📊 Nearby relations:', nearbyRelations.length);
   
-  // Handle navigating to a site by loading the full site data first
-  const handleNavigateToSite = async (site: NearbySectionSite) => {
-    try {
-      // Show loading state
-      setLoadingIds(prev => new Set(prev).add(site.id));
-      
-      // Get the complete site information from the database
-      const fullSiteData = await databaseService.getSiteById(site.id);
-      
-      if (fullSiteData) {
-        // Navigate to the existing site information page with complete data
-        onNavigateToSite({
-          ...fullSiteData,
-          distanceKm: site.distanceKm
-        });
-      } else {
-        // If site isn't in local database, navigate with what we have
-        console.log('Site not found in local database, using partial data:', site.id);
-        onNavigateToSite(site);
-      }
-    } catch (error) {
-      console.error('Error loading full site data:', error);
-      // Fall back to navigating with partial data
-      onNavigateToSite(site);
-    } finally {
-      // Remove loading state
-      setLoadingIds(prev => {
-        const next = new Set(prev);
-        next.delete(site.id);
-        return next;
-      });
+  // Convert relations to displayable site data
+  const withinSites = withinRelations.map(relation => {
+    const site = getSiteById(relation.siteId);
+    if (!site) {
+      console.warn('⚠️  Site not found for relation:', relation.siteId);
+      return null;
     }
+    
+    return {
+      ...site,
+      airDistanceKm: relation.airDistanceKm,
+      roadDistanceKm: relation.roadDistanceKm
+    };
+  }).filter(Boolean) as (Site & { airDistanceKm: number; roadDistanceKm?: number })[];
+  
+  const nearbySites = nearbyRelations.map(relation => {
+    const site = getSiteById(relation.siteId);
+    if (!site) {
+      console.warn('⚠️  Site not found for relation:', relation.siteId);
+      return null;
+    }
+    
+    return {
+      ...site,
+      airDistanceKm: relation.airDistanceKm,
+      roadDistanceKm: relation.roadDistanceKm
+    };
+  }).filter(Boolean) as (Site & { airDistanceKm: number; roadDistanceKm?: number })[];
+  
+  // Handle navigating to a site using just the site ID (fixes navigation issue)
+  const handleNavigateToSite = (siteId: string | number) => {
+    console.log('🧭 Navigating to site ID:', siteId);
+    onNavigateToSite(siteId);
   };
 
-  const renderEmptySubplaces = () => (
+  const renderEmptyWithin = () => (
     <View style={styles.emptyStateContainer}>
-      <Text style={styles.emptyStateText}>No subplaces listed.</Text>
+      <Text style={styles.emptyStateText}>No sites within 2 km found.</Text>
+      {computingNearby && (
+        <Text style={styles.computingText}>Computing nearby relations...</Text>
+      )}
     </View>
   );
 
   const renderEmptyNearby = () => (
     <View style={styles.emptyStateContainer}>
-      <Text style={styles.emptyStateText}>No nearby attractions found.</Text>
+      <Text style={styles.emptyStateText}>No nearby attractions within 10 km found.</Text>
+      {computingNearby && (
+        <Text style={styles.computingText}>Computing nearby relations...</Text>
+      )}
     </View>
   );
 
@@ -98,38 +102,38 @@ export function NearbySection({ currentSite, onNavigateToSite, isOffline = false
 
       {/* Within This Site Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Within This Site</Text>
-        {subplaces.length > 0 ? (
+        <Text style={styles.sectionTitle}>Within This Site (2 km)</Text>
+        {withinSites.length > 0 ? (
           <View>
-            {subplaces.map((item) => (
+            {withinSites.map((site) => (
               <NearbyCard
-                key={`subplace-${item.id}`}
-                site={item}
-                onPress={handleNavigateToSite}
+                key={`within-${site.id}`}
+                site={site}
+                onPress={() => handleNavigateToSite(site.id)}
                 isOffline={isOffline}
-                testID={`nearby-card-${item.id}`}
-                isLoading={loadingIds.has(item.id)}
+                testID={`nearby-card-${site.id}`}
+                roadDistanceKm={site.roadDistanceKm}
               />
             ))}
           </View>
         ) : (
-          renderEmptySubplaces()
+          renderEmptyWithin()
         )}
       </View>
 
       {/* Nearby Attractions Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Nearby Attractions (Within 2 km)</Text>
-        {nearbyAttractions.length > 0 ? (
+        <Text style={styles.sectionTitle}>Nearby Attractions (10 km)</Text>
+        {nearbySites.length > 0 ? (
           <View>
-            {nearbyAttractions.map((item) => (
+            {nearbySites.map((site) => (
               <NearbyCard
-                key={`nearby-${item.id}`}
-                site={item}
-                onPress={handleNavigateToSite}
+                key={`nearby-${site.id}`}
+                site={site}
+                onPress={() => handleNavigateToSite(site.id)}
                 isOffline={isOffline}
-                testID={`nearby-card-${item.id}`}
-                isLoading={loadingIds.has(item.id)}
+                testID={`nearby-card-${site.id}`}
+                roadDistanceKm={site.roadDistanceKm}
               />
             ))}
           </View>
@@ -182,5 +186,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#9CA3AF', // gray-400
     fontStyle: 'italic',
+  },
+  computingText: {
+    fontSize: 12,
+    color: '#6B7280', // gray-500
+    fontStyle: 'italic',
+    marginTop: 4,
   },
 });

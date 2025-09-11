@@ -32,6 +32,28 @@ export interface Site {
   // BEGIN nearby - Optional fields for nearby functionality
   subplaces?: SiteSubplace[];
   nearby?: NearbySite[];
+  
+  /** Admin overrides (optional) **/
+  nearby_overrides?: {
+    include?: (string | number)[];
+    exclude?: (string | number)[];
+  };
+  within_overrides?: {
+    include?: (string | number)[];
+    exclude?: (string | number)[];
+  };
+  
+  // Computed fields (not persisted, computed at runtime)
+  computedWithin?: Array<{
+    siteId: string | number;
+    airDistanceKm: number;
+    roadDistanceKm?: number;
+  }>;
+  computedNearby?: Array<{
+    siteId: string | number;
+    airDistanceKm: number;
+    roadDistanceKm?: number;
+  }>;
   // END nearby
 }
 
@@ -207,6 +229,24 @@ class DatabaseService {
         // Column might already exist, ignore error
         console.log('ℹ️ subplaces column already exists or error adding it');
       }
+
+      try {
+        await this.db.execAsync(`
+          ALTER TABLE sites ADD COLUMN nearby_overrides TEXT;
+        `);
+        console.log('✅ Added nearby_overrides column to sites table');
+      } catch (error) {
+        console.log('ℹ️ nearby_overrides column already exists or error adding it');
+      }
+
+      try {
+        await this.db.execAsync(`
+          ALTER TABLE sites ADD COLUMN within_overrides TEXT;
+        `);
+        console.log('✅ Added within_overrides column to sites table');
+      } catch (error) {
+        console.log('ℹ️ within_overrides column already exists or error adding it');
+      }
       // END nearby-admin
 
       // Favorite sites table
@@ -359,6 +399,25 @@ class DatabaseService {
       } catch (error) {
         console.warn('Failed to parse subplaces data for site:', rawSite.id);
         site.subplaces = [];
+      }
+    }
+    
+    // Parse override fields
+    if (rawSite.nearby_overrides && typeof rawSite.nearby_overrides === 'string') {
+      try {
+        site.nearby_overrides = JSON.parse(rawSite.nearby_overrides);
+      } catch (error) {
+        console.warn('Failed to parse nearby_overrides data for site:', rawSite.id);
+        site.nearby_overrides = undefined;
+      }
+    }
+    
+    if (rawSite.within_overrides && typeof rawSite.within_overrides === 'string') {
+      try {
+        site.within_overrides = JSON.parse(rawSite.within_overrides);
+      } catch (error) {
+        console.warn('Failed to parse within_overrides data for site:', rawSite.id);
+        site.within_overrides = undefined;
       }
     }
     
@@ -684,6 +743,8 @@ class DatabaseService {
       // BEGIN nearby-admin - Prepare nearby data for SQLite storage
       const nearbyJson = site.nearby ? JSON.stringify(site.nearby) : null;
       const subplacesJson = site.subplaces ? JSON.stringify(site.subplaces) : null;
+      const nearbyOverridesJson = site.nearby_overrides ? JSON.stringify(site.nearby_overrides) : null;
+      const withinOverridesJson = site.within_overrides ? JSON.stringify(site.within_overrides) : null;
       // END nearby-admin
       
       if (existingSite) {
@@ -703,7 +764,9 @@ class DatabaseService {
             entry_fee = ?,
             updated_at = datetime('now'),
             nearby = ?,
-            subplaces = ?
+            subplaces = ?,
+            nearby_overrides = ?,
+            within_overrides = ?
           WHERE id = ?`,
           [
             site.name || '',
@@ -720,6 +783,8 @@ class DatabaseService {
             // BEGIN nearby-admin
             nearbyJson,
             subplacesJson,
+            nearbyOverridesJson,
+            withinOverridesJson,
             // END nearby-admin
             site.id
           ]
@@ -731,8 +796,8 @@ class DatabaseService {
           `INSERT INTO sites (
             id, name, description, location, latitude, longitude, category,
             image_url, historical_period, significance, visiting_hours, entry_fee,
-            nearby, subplaces, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+            nearby, subplaces, nearby_overrides, within_overrides, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
           [
             site.id,
             site.name || '',
@@ -748,7 +813,9 @@ class DatabaseService {
             site.entranceFee || site.entry_fee || '',
             // BEGIN nearby-admin
             nearbyJson,
-            subplacesJson
+            subplacesJson,
+            nearbyOverridesJson,
+            withinOverridesJson
             // END nearby-admin
           ]
         );

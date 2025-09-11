@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Card, CardContent, CardHeader } from './ui/card';
+import { useCustomAlert } from './ui/custom-alert';
 
 interface LoginScreenProps {
   onLogin: (email: string, password: string) => Promise<void>;
@@ -18,19 +19,46 @@ export function LoginScreen({ onLogin, onNavigateToSignup, onNavigateToForgotPas
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const { showError, showWarning, AlertComponent } = useCustomAlert();
+
   const handleSubmit = async () => {
-    if (!email || !password) {
-      setError('Please enter both email and password');
+    // Clear previous errors
+    setError(null);
+
+    // Validation
+    if (!email.trim()) {
+      showError('Missing Information', 'Please enter your email address');
+      return;
+    }
+
+    if (!password) {
+      showError('Missing Information', 'Please enter your password');
+      return;
+    }
+
+    if (!email.includes('@')) {
+      showWarning('Invalid Email', 'Please enter a valid email address');
       return;
     }
 
     setIsLoading(true);
-    setError(null);
 
     try {
-      await onLogin(email, password);
+      await onLogin(email.trim(), password);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      const errorMessage = err instanceof Error ? err.message : 'Login failed';
+      setError(errorMessage);
+      
+      // Show custom alert based on error type
+      if (errorMessage.toLowerCase().includes('password')) {
+        showError('Incorrect Password', 'The password you entered is incorrect. Please try again or reset your password.');
+      } else if (errorMessage.toLowerCase().includes('user') || errorMessage.toLowerCase().includes('email')) {
+        showError('Account Not Found', 'No account found with this email address. Please check your email or sign up for a new account.');
+      } else if (errorMessage.toLowerCase().includes('network')) {
+        showError('Connection Error', 'Please check your internet connection and try again.');
+      } else {
+        showError('Login Failed', errorMessage);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -130,6 +158,7 @@ export function LoginScreen({ onLogin, onNavigateToSignup, onNavigateToForgotPas
           </View>
         </CardContent>
       </Card>
+      <AlertComponent />
     </ScrollView>
   );
 }

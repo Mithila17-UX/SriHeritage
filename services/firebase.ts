@@ -71,6 +71,16 @@ export interface FirestoreSite {
     distanceKm?: number;
     category?: string;
   }>;
+  
+  /** Admin overrides (optional) **/
+  nearby_overrides?: {
+    include?: (string | number)[];
+    exclude?: (string | number)[];
+  };
+  within_overrides?: {
+    include?: (string | number)[];
+    exclude?: (string | number)[];
+  };
 }
 
 // Helper function to ensure user is authenticated before accessing Firestore

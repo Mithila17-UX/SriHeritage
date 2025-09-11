@@ -1,10 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { databaseService, authService, syncService, Site } from '../services';
+import { computeNeighborsForSite, enrichWithRoadDistance, NearbyRelation } from '../utils/nearby';
+import { siteToCoords } from '../utils/geo';
+import { routingServiceOSM } from '../services/routingServiceOSM';
 
 export const useSites = () => {
   const [sites, setSites] = useState<Site[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [computingNearby, setComputingNearby] = useState(false);
 
   const loadSites = useCallback(async () => {
     setLoading(true);
@@ -13,12 +17,94 @@ export const useSites = () => {
     try {
       const allSites = await databaseService.getAllSites();
       setSites(allSites);
+      
+      // Start computing nearby relations in the background
+      computeAllNearbyRelations(allSites);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load sites');
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const computeAllNearbyRelations = async (allSites: Site[]) => {
+    console.log('🔄 Starting nearby relations computation for', allSites.length, 'sites');
+    setComputingNearby(true);
+    
+    try {
+      const sitesWithNearby: Site[] = [];
+      
+      for (const site of allSites) {
+        console.log(`🏛️  Computing for site: ${site.name} (${site.id})`);
+        
+        // Compute candidates by air distance
+        const { within, nearby } = computeNeighborsForSite(
+          allSites,
+          site.id,
+          { nearbyKm: 10, withinKm: 2 },
+          {
+            nearby: site.nearby_overrides,
+            within: site.within_overrides
+          }
+        );
+
+        // Get site coordinates for road distance enrichment
+        const siteCoords = siteToCoords(site);
+        
+        let enrichedWithin: NearbyRelation[] = within;
+        let enrichedNearby: NearbyRelation[] = nearby;
+        
+        if (siteCoords && routingServiceOSM.isAvailable()) {
+          console.log(`🛣️  Enriching ${within.length + nearby.length} relations with road distance`);
+          
+          // Create lookup function for coordinates
+          const lookupCoords = (siteId: string | number) => {
+            const targetSite = allSites.find(s => s.id === siteId);
+            return targetSite ? siteToCoords(targetSite) : null;
+          };
+          
+          // Enrich with road distance using the OSM routing service
+          const getDrivingMeters = async (origin: {lat: number; lng: number}, destination: {lat: number; lng: number}) => {
+            const distanceKm = await routingServiceOSM.getRoadDistance(
+              { latitude: origin.lat, longitude: origin.lng },
+              { latitude: destination.lat, longitude: destination.lng }
+            );
+            return distanceKm ? distanceKm * 1000 : null; // Convert km to meters
+          };
+
+          // Enrich within and nearby separately with smaller concurrency
+          [enrichedWithin, enrichedNearby] = await Promise.all([
+            enrichWithRoadDistance(siteCoords, within, getDrivingMeters, lookupCoords, { concurrency: 2 }),
+            enrichWithRoadDistance(siteCoords, nearby, getDrivingMeters, lookupCoords, { concurrency: 2 })
+          ]);
+        } else {
+          if (!siteCoords) {
+            console.log(`⚠️  Site ${site.id} has no coordinates, skipping road distance enrichment`);
+          }
+          if (!routingServiceOSM.isAvailable()) {
+            console.log(`⚠️  OSM Routing service not available, skipping road distance enrichment`);
+          }
+        }
+        
+        // Add computed fields to site
+        const enrichedSite: Site = {
+          ...site,
+          computedWithin: enrichedWithin,
+          computedNearby: enrichedNearby
+        };
+        
+        sitesWithNearby.push(enrichedSite);
+      }
+      
+      console.log('✅ Nearby relations computation completed');
+      setSites(sitesWithNearby);
+    } catch (err) {
+      console.error('❌ Error computing nearby relations:', err);
+      // Don't throw, just log the error and continue with sites without computed relations
+    } finally {
+      setComputingNearby(false);
+    }
+  };
 
   const searchSites = useCallback(async (query: string) => {
     setLoading(true);
@@ -48,6 +134,11 @@ export const useSites = () => {
     }
   }, []);
 
+  // Selector to get site by ID
+  const getSiteById = useCallback((id: string | number): Site | null => {
+    return sites.find(site => String(site.id) === String(id)) || null;
+  }, [sites]);
+
   useEffect(() => {
     loadSites();
   }, [loadSites]);
@@ -56,9 +147,11 @@ export const useSites = () => {
     sites,
     loading,
     error,
+    computingNearby,
     loadSites,
     searchSites,
-    getSitesByCategory
+    getSitesByCategory,
+    getSiteById
   };
 };
 

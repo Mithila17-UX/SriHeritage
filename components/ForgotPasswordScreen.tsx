@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Card, CardContent, CardHeader } from './ui/card';
+import { useCustomAlert } from './ui/custom-alert';
 // Note: Replace lucide-react icons with React Native compatible icons
 // import { ArrowLeft, Mail, CheckCircle } from 'lucide-react';
 
@@ -17,18 +18,37 @@ export function ForgotPasswordScreen({ onBackToLogin, onForgotPassword }: Forgot
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  const { showError, showWarning, showSuccess, AlertComponent } = useCustomAlert();
+
   const handleSubmit = async () => {
-    if (email) {
-      setIsLoading(true);
-      try {
-        await onForgotPassword(email);
-        setIsSubmitted(true);
-      } catch (error) {
-        console.error('Failed to send password reset email:', error);
-        // You can add error handling here (show error message to user)
-      } finally {
-        setIsLoading(false);
+    if (!email.trim()) {
+      showError('Missing Email', 'Please enter your email address to receive reset instructions.');
+      return;
+    }
+
+    if (!email.includes('@')) {
+      showWarning('Invalid Email', 'Please enter a valid email address.');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await onForgotPassword(email.trim());
+      setIsSubmitted(true);
+      showSuccess('Email Sent', 'Password reset instructions have been sent to your email.');
+    } catch (error) {
+      console.error('Failed to send password reset email:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to send reset email';
+      
+      if (errorMessage.toLowerCase().includes('user') || errorMessage.toLowerCase().includes('email')) {
+        showError('Email Not Found', 'No account found with this email address. Please check your email or sign up for a new account.');
+      } else if (errorMessage.toLowerCase().includes('network')) {
+        showError('Connection Error', 'Please check your internet connection and try again.');
+      } else {
+        showError('Reset Failed', 'Unable to send password reset email. Please try again later.');
       }
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -86,6 +106,7 @@ export function ForgotPasswordScreen({ onBackToLogin, onForgotPassword }: Forgot
             </View>
           </CardContent>
         </Card>
+        <AlertComponent />
       </ScrollView>
     );
   }
@@ -148,6 +169,7 @@ export function ForgotPasswordScreen({ onBackToLogin, onForgotPassword }: Forgot
           </View>
         </CardContent>
       </Card>
+      <AlertComponent />
     </ScrollView>
   );
 }

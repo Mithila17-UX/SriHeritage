@@ -36,3 +36,10 @@ export function siteToCoords(site: {latitude?: number; longitude?: number; coord
   
   return null;
 }
+
+/**
+ * Format distance in kilometers with 1 decimal place
+ * @param km Distance in kilometers
+ * @returns Formatted string with "km" suffix
+ */
+export const formatKm = (km: number): string => `${km.toFixed(1)} km`;

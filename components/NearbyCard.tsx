@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, Image, StyleSheet, ActivityIndicator } from 'react-native';
 import { Badge } from './ui/badge';
+import { formatKm } from '../utils/geo';
 
 // Re-use existing Site type structure
 interface NearbyCardSite {
@@ -19,13 +20,14 @@ interface NearbyCardSite {
 
 interface NearbyCardProps {
   site: NearbyCardSite;
-  onPress: (site: NearbyCardSite) => void;
+  onPress: () => void;
   isOffline?: boolean;
   testID?: string;
   isLoading?: boolean;
+  roadDistanceKm?: number;
 }
 
-export function NearbyCard({ site, onPress, isOffline = false, testID, isLoading = false }: NearbyCardProps) {
+export function NearbyCard({ site, onPress, isOffline = false, testID, isLoading = false, roadDistanceKm }: NearbyCardProps) {
   const imageUrl = site.image || site.image_url;
   const hours = site.openingHours || site.visiting_hours || 'Hours not available';
   const rating = site.rating || 0;
@@ -33,7 +35,7 @@ export function NearbyCard({ site, onPress, isOffline = false, testID, isLoading
   return (
     <TouchableOpacity
       style={[styles.container, isLoading && styles.containerLoading]}
-      onPress={() => onPress(site)}
+      onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={site.name}
       testID={testID}
@@ -74,9 +76,9 @@ export function NearbyCard({ site, onPress, isOffline = false, testID, isLoading
           <Badge style={styles.categoryBadge}>
             <Text style={styles.categoryText}>{site.category}</Text>
           </Badge>
-          {site.distanceKm !== undefined && (
+          {roadDistanceKm !== undefined && (
             <Badge style={styles.distanceBadge}>
-              <Text style={styles.distanceText}>{site.distanceKm.toFixed(1)} km</Text>
+              <Text style={styles.distanceText} testID="site-road-distance">{formatKm(roadDistanceKm)}</Text>
             </Badge>
           )}
         </View>

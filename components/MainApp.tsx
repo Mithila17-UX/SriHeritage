@@ -46,6 +46,7 @@ export function MainApp({ user, onLogout }: MainAppProps) {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('dashboard');
   const [selectedSite, setSelectedSite] = useState<SiteData | null>(null);
+  const [selectedSiteId, setSelectedSiteId] = useState<string | number | null>(null);
   const [favoriteSites, setFavoriteSites] = useState<number[]>([]);
   const [visitedSites, setVisitedSites] = useState<number[]>([1, 3]); // Mock visited sites
   const [plannedSites, setPlannedSites] = useState<number[]>([]);
@@ -53,12 +54,20 @@ export function MainApp({ user, onLogout }: MainAppProps) {
 
   const handleNavigateToSite = (site: SiteData) => {
     setSelectedSite(site);
+    setSelectedSiteId(null);
+    setCurrentScreen('site-info');
+  };
+  
+  const handleNavigateToSiteById = (siteId: string | number) => {
+    setSelectedSiteId(siteId);
+    setSelectedSite(null);
     setCurrentScreen('site-info');
   };
 
   const handleBackFromSite = () => {
     setCurrentScreen(activeTab);
     setSelectedSite(null);
+    setSelectedSiteId(null);
   };
 
   const toggleFavorite = (siteId: number) => {
@@ -127,19 +136,36 @@ export function MainApp({ user, onLogout }: MainAppProps) {
           />
         );
       case 'site-info':
-        return selectedSite ? (
-          <SiteInformationPage
-            site={selectedSite}
-            isFavorite={favoriteSites.includes(selectedSite.id)}
-            isVisited={visitedSites.includes(selectedSite.id)}
-            isPlanned={plannedSites.includes(selectedSite.id)}
-            offlineMode={offlineMode}
-            onToggleFavorite={() => toggleFavorite(selectedSite.id)}
-            onVisitStatusChange={(status) => handleVisitStatusChange(selectedSite.id, status)}
-            onBack={handleBackFromSite}
-            onNavigateToSite={handleNavigateToSite}
-          />
-        ) : null;
+        if (selectedSite) {
+          return (
+            <SiteInformationPage
+              site={selectedSite}
+              isFavorite={favoriteSites.includes(selectedSite.id)}
+              isVisited={visitedSites.includes(selectedSite.id)}
+              isPlanned={plannedSites.includes(selectedSite.id)}
+              offlineMode={offlineMode}
+              onToggleFavorite={() => toggleFavorite(selectedSite.id)}
+              onVisitStatusChange={(status) => handleVisitStatusChange(selectedSite.id, status)}
+              onBack={handleBackFromSite}
+              onNavigateToSite={handleNavigateToSiteById}
+            />
+          );
+        } else if (selectedSiteId) {
+          return (
+            <SiteInformationPage
+              siteId={selectedSiteId}
+              isFavorite={favoriteSites.includes(Number(selectedSiteId))}
+              isVisited={visitedSites.includes(Number(selectedSiteId))}
+              isPlanned={plannedSites.includes(Number(selectedSiteId))}
+              offlineMode={offlineMode}
+              onToggleFavorite={() => toggleFavorite(Number(selectedSiteId))}
+              onVisitStatusChange={(status) => handleVisitStatusChange(Number(selectedSiteId), status)}
+              onBack={handleBackFromSite}
+              onNavigateToSite={handleNavigateToSiteById}
+            />
+          );
+        }
+        return null;
       default:
         return (
           <DashboardScreen 

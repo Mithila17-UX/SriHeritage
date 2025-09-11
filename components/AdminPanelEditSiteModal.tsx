@@ -13,6 +13,8 @@ import { ImagePickerModal } from './ImagePickerModal';
 import { ImageUploadService } from '../services/imageUpload';
 import { DistanceCalculatorService, AVAILABLE_DISTRICTS } from '../services/distanceCalculator';
 import { AdminNearbyEditor, NearbyRef } from './AdminNearbyEditor';
+import { AdminNearbyOverridesEditor } from './AdminNearbyOverridesEditor';
+import { useSites } from '../hooks/useSites';
 
 interface Site {
   id: string;
@@ -34,6 +36,14 @@ interface Site {
   // BEGIN nearby-admin
   subplaces?: NearbyRef[];
   nearby?: NearbyRef[];
+  nearby_overrides?: {
+    include?: (string | number)[];
+    exclude?: (string | number)[];
+  };
+  within_overrides?: {
+    include?: (string | number)[];
+    exclude?: (string | number)[];
+  };
   // END nearby-admin
 }
 
@@ -77,7 +87,13 @@ export function AdminPanelEditSiteModal({
   // BEGIN nearby-admin
   const [subplaces, setSubplaces] = useState<NearbyRef[]>([]);
   const [nearby, setNearby] = useState<NearbyRef[]>([]);
+  const [overrides, setOverrides] = useState<{
+    nearby?: { include?: (string | number)[]; exclude?: (string | number)[] };
+    within?: { include?: (string | number)[]; exclude?: (string | number)[] };
+  }>({});
   // END nearby-admin
+  
+  const { sites: allSites } = useSites();
 
   useEffect(() => {
     if (site) {
@@ -100,6 +116,12 @@ export function AdminPanelEditSiteModal({
       // Initialize nearby editors from site data
       setSubplaces(site.subplaces || []);
       setNearby(site.nearby || []);
+      
+      // Initialize overrides
+      setOverrides({
+        nearby: site.nearby_overrides || {},
+        within: site.within_overrides || {}
+      });
       // END nearby-admin
     }
   }, [site]);
@@ -286,7 +308,9 @@ export function AdminPanelEditSiteModal({
         },
         // BEGIN nearby-admin
         subplaces: subplaces,
-        nearby: nearby
+        nearby: nearby,
+        nearby_overrides: overrides.nearby,
+        within_overrides: overrides.within
         // END nearby-admin
       };
 
@@ -306,7 +330,9 @@ export function AdminPanelEditSiteModal({
         coordinates: updatedSite.coordinates,
         // BEGIN nearby-admin
         subplaces: subplaces,
-        nearby: nearby
+        nearby: nearby,
+        nearby_overrides: overrides.nearby,
+        within_overrides: overrides.within
         // END nearby-admin
       });
 
@@ -325,6 +351,8 @@ export function AdminPanelEditSiteModal({
         entranceFee: updatedSite.entranceFee,
         coordinates: updatedSite.coordinates,
         gallery: JSON.stringify(site.gallery || []),
+        nearby_overrides: overrides.nearby,
+        within_overrides: overrides.within,
         // Other required fields
         latitude: latitude,
         longitude: longitude,
@@ -548,8 +576,9 @@ export function AdminPanelEditSiteModal({
           </View>
 
           {/* BEGIN nearby-admin */}
-          {/* Nearby Management Section */}
+          {/* Manual Nearby Management Section */}
           <View style={styles.nearbySection}>
+            <Text style={styles.sectionHeader}>Manual Nearby Management (Legacy)</Text>
             <AdminNearbyEditor
               title="Within This Site"
               value={subplaces}
@@ -565,6 +594,60 @@ export function AdminPanelEditSiteModal({
               testID="nearby-editor"
             />
           </View>
+
+          {/* Auto-Computed Nearby Overrides Section */}
+          {site && allSites.length > 0 && (
+            <View style={styles.nearbySection}>
+              <Text style={styles.sectionHeader}>Auto-Computed Nearby Relations</Text>
+              <Text style={styles.sectionSubtext}>
+                Sites are auto-computed based on distance. Use the sections below to include or exclude specific sites.
+              </Text>
+              
+              <AdminNearbyOverridesEditor
+                currentSite={{
+                  ...site,
+                  id: parseInt(site.id),
+                  latitude: parseFloat(formData.latitude) || 0,
+                  longitude: parseFloat(formData.longitude) || 0,
+                  coordinates: {
+                    latitude: parseFloat(formData.latitude) || 0,
+                    longitude: parseFloat(formData.longitude) || 0
+                  },
+                  gallery: JSON.stringify(site.gallery || []),
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString()
+                }}
+                allSites={allSites}
+                overrides={overrides}
+                onChange={setOverrides}
+                title="Within This Site (2 km)"
+                category="within"
+                testID="within-overrides-editor"
+              />
+              
+              <AdminNearbyOverridesEditor
+                currentSite={{
+                  ...site,
+                  id: parseInt(site.id),
+                  latitude: parseFloat(formData.latitude) || 0,
+                  longitude: parseFloat(formData.longitude) || 0,
+                  coordinates: {
+                    latitude: parseFloat(formData.latitude) || 0,
+                    longitude: parseFloat(formData.longitude) || 0
+                  },
+                  gallery: JSON.stringify(site.gallery || []),
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString()
+                }}
+                allSites={allSites}
+                overrides={overrides}
+                onChange={setOverrides}
+                title="Nearby Attractions (10 km)"
+                category="nearby"
+                testID="nearby-overrides-editor"
+              />
+            </View>
+          )}
           {/* END nearby-admin */}
 
           {/* Manual Calculate Button */}
@@ -784,6 +867,18 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 16,
     gap: 16,
+  },
+  sectionHeader: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginBottom: 8,
+  },
+  sectionSubtext: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 16,
+    lineHeight: 20,
   },
   buttonSection: {
     gap: 12,

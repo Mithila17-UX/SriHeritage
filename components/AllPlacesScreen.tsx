@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, FlatList, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, FlatList, Modal } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
@@ -12,6 +12,7 @@ import { databaseService, syncService, authService, Site } from '../services';
 import { getSitesFromFirestore, FirestoreSite } from '../services/firebase';
 import { routingServiceOSM } from '../services/routingServiceOSM';
 import { LeafletPageService } from '../services/leafletPage';
+import { useCustomAlert } from './ui/custom-alert';
 // Note: Replace lucide-react icons with React Native compatible icons
 // import { MapPin, Navigation, Star, Search, Filter, Heart, Eye, SortAsc } from 'lucide-react';
 // import { ImageWithFallback } from './figma/ImageWithFallback';
@@ -72,6 +73,8 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
   const [routeCoordinates, setRouteCoordinates] = useState<RouteCoordinates[]>([]);
   const [mapConfig, setMapConfig] = useState<MapConfig | null>(null);
   const [isGettingDirections, setIsGettingDirections] = useState<boolean>(false);
+
+  const { showError, showWarning, showInfo, AlertComponent } = useCustomAlert();
 
   // Initialize and load data - bypassing SQLite due to corruption
   useEffect(() => {
@@ -318,7 +321,7 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
   // Handle favorite toggle - using AsyncStorage instead of SQLite
   const handleToggleFavorite = async (siteId: number) => {
     if (!currentUserId) {
-      Alert.alert('Login Required', 'Please log in to add favorites');
+      showWarning('Login Required', 'Please log in to add favorites and personalize your experience.');
       return;
     }
 
@@ -355,14 +358,14 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
       }
     } catch (error) {
       console.error('❌ Error toggling favorite:', error);
-      Alert.alert('Error', 'Failed to update favorite status');
+      showError('Failed to Update', 'Unable to update favorite status. Please check your connection and try again.');
     }
   };
 
   // Handle visited toggle - using AsyncStorage instead of SQLite
   const handleToggleVisited = async (siteId: number) => {
     if (!currentUserId) {
-      Alert.alert('Login Required', 'Please log in to mark as visited');
+      showWarning('Login Required', 'Please log in to track your visited places and build your heritage journey.');
       return;
     }
 
@@ -405,7 +408,7 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
       }
     } catch (error) {
       console.error('❌ Error toggling visited:', error);
-      Alert.alert('Error', 'Failed to update visited status');
+      showError('Failed to Update', 'Unable to update visited status. Please check your connection and try again.');
     }
   };
 
@@ -463,7 +466,7 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
 
   const handleGetDirections = async (place: any) => {
     if (!userLocation) {
-      Alert.alert('Location Required', 'Please enable location services to get directions.');
+      showWarning('Location Required', 'Please enable location services to get directions to heritage sites.');
       return;
     }
 
@@ -471,7 +474,7 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
     const placeLon = place.longitude || place.coordinates?.longitude;
     
     if (!placeLat || !placeLon) {
-      Alert.alert('Site Location', 'Location information for this site is not available.');
+      showInfo('Site Location', 'Location information for this site is not available at the moment.');
       return;
     }
 
@@ -577,7 +580,7 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
               onError={(syntheticEvent) => {
                 const { nativeEvent } = syntheticEvent;
                 console.error('AllPlaces WebView error:', nativeEvent);
-                Alert.alert('Map Error', 'Failed to load map. Please try again.');
+                showError('Map Error', 'Failed to load map. Please check your connection and try again.');
               }}
               onHttpError={(syntheticEvent) => {
                 const { nativeEvent } = syntheticEvent;
@@ -607,114 +610,43 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
         <View style={styles.headerContent}>
           <View style={styles.headerText}>
             <Text style={styles.headerTitle}>All Places in Sri Lanka</Text>
-            <Text style={styles.headerSubtitle}>Discover {allPlaces.length} heritage sites across the island</Text>
-          </View>
-          <View style={styles.headerActions}>
-            <Button 
-              onPress={async () => {
-                console.log('🔄 Database reset triggered');
-                setLoading(true);
-                try {
-                  Alert.alert(
-                    'Reset Database',
-                    'This will reset the database and reload all data. Continue?',
-                    [
-                      { text: 'Cancel', style: 'cancel', onPress: () => setLoading(false) },
-                      { 
-                        text: 'Reset', 
-                        style: 'destructive', 
-                        onPress: async () => {
-                          try {
-                            console.log('🔄 Resetting database...');
-                            await databaseService.resetDatabase();
-                            console.log('✅ Database reset complete');
-                            
-                            // Force sync from Firestore after reset
-                            console.log('🔄 Syncing from Firestore after reset...');
-                            await syncService.syncSitesFromFirestore();
-                            
-                            // Reload sites
-                            const sites = await databaseService.getAllSites();
-                            console.log('📊 Sites after reset and sync:', sites.length);
-                            
-                            if (sites.length === 0) {
-                              setAllPlaces(defaultPlaces.map((site: any) => ({
-                                ...site,
-                                latitude: (site as any).latitude || 0,
-                                longitude: (site as any).longitude || 0,
-                                created_at: (site as any).created_at || new Date().toISOString(),
-                                updated_at: (site as any).updated_at || new Date().toISOString(),
-                                gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : [])
-                              })));
-                            } else {
-                              const formattedSites = sites.map((site: any) => ({
-                                ...site,
-                                distance: site.distance || `${(Math.random() * 100).toFixed(1)} km`,
-                                rating: site.rating || 4.5,
-                                image: site.image || site.image_url || 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=400&h=300&fit=crop',
-                                openingHours: site.openingHours || site.visiting_hours || 'Daily: 6:00 AM - 6:00 PM',
-                                entranceFee: site.entranceFee || site.entry_fee || 'Free entry',
-                                gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : []),
-                                latitude: site.latitude || 0,
-                                longitude: site.longitude || 0,
-                                created_at: site.created_at || new Date().toISOString(),
-                                updated_at: site.updated_at || new Date().toISOString()
-                              }));
-                              setAllPlaces(formattedSites);
-                            }
-                            
-                            Alert.alert('Success', 'Database reset and synced successfully!');
-                          } catch (resetError) {
-                            console.error('❌ Error resetting database:', resetError);
-                            Alert.alert('Error', 'Failed to reset database. Using default data.');
-                            setAllPlaces(defaultPlaces.map((site: any) => ({
-                              ...site,
-                              latitude: (site as any).latitude || 0,
-                              longitude: (site as any).longitude || 0,
-                              created_at: (site as any).created_at || new Date().toISOString(),
-                              updated_at: (site as any).updated_at || new Date().toISOString(),
-                              gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : [])
-                            })));
-                          } finally {
-                            setLoading(false);
-                          }
-                        }
-                      }
-                    ]
-                  );
-                } catch (error) {
-                  console.error('❌ Error in reset operation:', error);
-                  setLoading(false);
-                }
-              }}
-              style={styles.clearButton}
-            >
-              🔄 Refresh Data
-            </Button>
+            <Text style={styles.headerSubtitle}>Discover heritage sites across the island</Text>
           </View>
         </View>
 
-        {/* Search Bar */}
+        {/* Enhanced Search Bar */}
         <View style={styles.searchContainer}>
-          <Text style={styles.searchIcon}>🔍</Text>
-          <Input
-            placeholder="Search places, locations, or categories..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            style={styles.searchInput}
-          />
+          <View style={styles.searchInputWrapper}>
+            <Text style={styles.searchIcon}>🔍</Text>
+            <Input
+              placeholder="Search places, locations, or categories..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              style={styles.searchInput}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity 
+                onPress={() => setSearchQuery('')}
+                style={styles.clearSearchButton}
+              >
+                <Text style={styles.clearSearchIcon}>✕</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </View>
 
-      {/* Filters */}
+      {/* Enhanced Filters */}
       <View style={styles.filtersContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filtersContent}>
-          <View style={styles.filterGroup}>
-            <Text style={styles.filterIcon}>🔧</Text>
-            <Text style={styles.filterLabel}>District:</Text>
+          <View style={styles.filterCard}>
+            <View style={styles.filterHeader}>
+              <Text style={styles.filterIcon}>🏛️</Text>
+              <Text style={styles.filterLabel}>District</Text>
+            </View>
             <Select value={selectedDistrict} onValueChange={setSelectedDistrict} style={styles.select}>
-              <SelectTrigger>
-                <SelectValue />
+              <SelectTrigger style={styles.selectTrigger}>
+                <SelectValue placeholder="All Districts" />
               </SelectTrigger>
               <SelectContent>
                 {districts.map((district) => (
@@ -726,12 +658,14 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
             </Select>
           </View>
 
-          <View style={styles.filterGroup}>
-            <Text style={styles.filterIcon}>📊</Text>
-            <Text style={styles.filterLabel}>Sort by:</Text>
+          <View style={styles.filterCard}>
+            <View style={styles.filterHeader}>
+              <Text style={styles.filterIcon}>📊</Text>
+              <Text style={styles.filterLabel}>Sort By</Text>
+            </View>
             <Select value={sortBy} onValueChange={setSortBy} style={styles.selectSmall}>
-              <SelectTrigger>
-                <SelectValue />
+              <SelectTrigger style={styles.selectTrigger}>
+                <SelectValue placeholder="Distance" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="proximity">Distance</SelectItem>
@@ -740,6 +674,19 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
               </SelectContent>
             </Select>
           </View>
+
+          {(searchQuery || selectedDistrict !== 'All Districts') && (
+            <TouchableOpacity 
+              style={styles.clearFiltersButton}
+              onPress={() => {
+                setSearchQuery('');
+                setSelectedDistrict('All Districts');
+              }}
+            >
+              <Text style={styles.clearFiltersIcon}>✕</Text>
+              <Text style={styles.clearFiltersText}>Clear</Text>
+            </TouchableOpacity>
+          )}
         </ScrollView>
       </View>
 
@@ -771,146 +718,6 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
               style={styles.clearButton}
             >
               Clear Filters
-            </Button>
-            <Button 
-              onPress={() => {
-                console.log('🔄 Manual refresh from empty state triggered');
-                setLoading(true);
-                // Reload the component by forcing a re-render
-                setAllPlaces([]);
-                setTimeout(() => {
-                  const initializeAndLoadData = async () => {
-                    try {
-                      setLoading(true);
-                      console.log('🏛️ AllPlacesScreen: Starting initialization...');
-                      
-                      // Get current user ID
-                      const userId = await AsyncStorage.getItem('userId') || authService.getCurrentUserId();
-                      setCurrentUserId(userId);
-                      
-                      // Try to load from Firestore directly
-                      let sitesToDisplay = [];
-                      
-                      try {
-                        const { firestore } = await import('../services/firebase');
-                        const { collection, getDocs } = await import('firebase/firestore');
-                        
-                        const sitesCollection = collection(firestore, 'sites');
-                        const sitesSnapshot = await getDocs(sitesCollection);
-                        
-                        if (sitesSnapshot.size > 0) {
-                          const firestoreSites: any[] = [];
-                          sitesSnapshot.forEach((doc) => {
-                            const data = doc.data();
-                            let siteId: number;
-                            if (!isNaN(parseInt(doc.id))) {
-                              siteId = parseInt(doc.id);
-                            } else {
-                              siteId = Math.abs(doc.id.split('').reduce((a, b) => {
-                                a = ((a << 5) - a) + b.charCodeAt(0);
-                                return a & a;
-                              }, 0));
-                            }
-                            
-                            const siteData = {
-                              id: siteId,
-                              name: data.name || '',
-                              description: data.description || '',
-                              location: data.location || '',
-                              latitude: data.coordinates?.latitude || data.latitude || 0,
-                              longitude: data.coordinates?.longitude || data.longitude || 0,
-                              category: data.category || '',
-                              image_url: data.image || data.image_url || '',
-                              district: data.district || '',
-                              distance: data.distance || `${(Math.random() * 100).toFixed(1)} km`,
-                              rating: data.rating || 4.5,
-                              image: data.image || data.image_url || '',
-                              openingHours: data.openingHours || data.visiting_hours || '',
-                              entranceFee: data.entranceFee || data.entry_fee || '',
-                              gallery: data.gallery ? (Array.isArray(data.gallery) ? data.gallery.join(',') : '') : '',
-                              created_at: new Date().toISOString(),
-                              updated_at: new Date().toISOString()
-                            };
-                            
-                            firestoreSites.push(siteData);
-                          });
-                          
-                          // Use ONLY Firebase data, don't combine with defaults
-                          sitesToDisplay = firestoreSites;
-                          console.log('✅ Using Firebase data only:', firestoreSites.length, 'sites');
-                          
-                          // Sync to SQLite for better offline support
-                          try {
-                            const { databaseService } = await import('../services');
-                            
-                            // Insert Firebase data into SQLite
-                            for (const site of firestoreSites) {
-                              await databaseService.insertOrUpdateSite({
-                                id: site.id,
-                                name: site.name,
-                                description: site.description,
-                                location: site.location,
-                                latitude: site.latitude || site.coordinates?.latitude || 0,
-                                longitude: site.longitude || site.coordinates?.longitude || 0,
-                                category: site.category,
-                                image_url: site.image || site.image_url || '',
-                                historical_period: site.historical_period || '',
-                                significance: site.significance || '',
-                                visiting_hours: site.openingHours || site.visiting_hours || '',
-                                entry_fee: site.entranceFee || site.entry_fee || '',
-                                district: site.district || '',
-                                distance: site.distance || '',
-                                rating: site.rating || 4.5,
-                                image: site.image || site.image_url || '',
-                                openingHours: site.openingHours || site.visiting_hours || '',
-                                entranceFee: site.entranceFee || site.entry_fee || '',
-                                gallery: Array.isArray(site.gallery) ? site.gallery.join(',') : '',
-                                created_at: new Date().toISOString(),
-                                updated_at: new Date().toISOString()
-                              });
-                            }
-                            console.log('✅ Sites synced to SQLite for offline support');
-                          } catch (sqliteError) {
-                            console.error('❌ Error syncing to SQLite:', sqliteError);
-                          }
-                        } else {
-                          console.log('⚠️ No sites in Firebase, showing empty state');
-                          sitesToDisplay = [];
-                        }
-                      } catch (firestoreError) {
-                        console.error('❌ Firestore direct fetch failed:', firestoreError);
-                        console.log('🔄 Falling back to empty state due to Firebase error');
-                        sitesToDisplay = [];
-                      }
-                      
-                      const formattedSites = sitesToDisplay.map((site: any) => ({
-                        ...site,
-                        distance: site.distance || `${(Math.random() * 100).toFixed(1)} km`,
-                        rating: site.rating || 4.5,
-                        image: site.image || site.image_url || 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=400&h=300&fit=crop',
-                        openingHours: site.openingHours || site.visiting_hours || 'Daily: 6:00 AM - 6:00 PM',
-                        entranceFee: site.entranceFee || site.entry_fee || 'Free entry',
-                        gallery: Array.isArray(site.gallery) ? site.gallery : (typeof site.gallery === 'string' ? site.gallery.split(',').filter(Boolean) : []),
-                        latitude: site.latitude || 0,
-                        longitude: site.longitude || 0,
-                        created_at: site.created_at || new Date().toISOString(),
-                        updated_at: site.updated_at || new Date().toISOString()
-                      }));
-                      
-                      setAllPlaces(formattedSites);
-                    } catch (error) {
-                      console.error('❌ Error initializing AllPlacesScreen:', error);
-                      setAllPlaces([]);
-                    } finally {
-                      setLoading(false);
-                    }
-                  };
-                  initializeAndLoadData();
-                }, 100);
-              }}
-              style={styles.clearButton}
-            >
-              🔄 Refresh Data
             </Button>
           </View>
         ) : (
@@ -1021,6 +828,7 @@ export function AllPlacesScreen({ user, onNavigateToSite }: AllPlacesScreenProps
           />
         )}
       </View>
+      <AlertComponent />
     </View>
   );
 }
@@ -1079,33 +887,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#CCFBF1', // A light teal for the subtitle
   },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  refreshButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  resetButton: {
-    backgroundColor: 'rgba(255, 50, 50, 0.4)',
-    borderColor: 'rgba(255, 50, 50, 0.6)',
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  refreshButtonText: {
-    fontSize: 16,
-    color: '#FFFFFF',
-  },
   headerBadge: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     borderColor: 'rgba(255, 255, 255, 0.3)',
@@ -1118,54 +899,126 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   searchContainer: {
+    marginTop: 8,
+  },
+  searchInputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.15)',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   searchIcon: {
     fontSize: 18,
-    color: 'rgba(255, 255, 255, 0.7)',
-    marginRight: 8,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginRight: 12,
   },
   searchInput: {
     flex: 1,
     backgroundColor: 'transparent',
     borderWidth: 0,
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  clearSearchButton: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  clearSearchIcon: {
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontWeight: 'bold',
   },
   filtersContainer: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F8FAFC',
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB', // gray-200
-    height: 60, // Set a fixed height for vertical centering
-    justifyContent: 'center', // Center content vertically
+    borderBottomColor: '#E2E8F0',
+    paddingVertical: 16,
   },
   filtersContent: {
     paddingHorizontal: 16,
-    gap: 12,
+    gap: 16,
+    alignItems: 'center',
   },
-  filterGroup: {
+  filterCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+    minWidth: 140,
+  },
+  filterHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    marginBottom: 8,
+    gap: 6,
   },
   filterIcon: {
     fontSize: 16,
   },
   filterLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#374151', // gray-700
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   select: {
-    minWidth: 160,
+    minWidth: 120,
   },
   selectSmall: {
-    minWidth: 128,
+    minWidth: 100,
+  },
+  selectTrigger: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  clearFiltersButton: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  clearFiltersIcon: {
+    fontSize: 14,
+    color: '#DC2626',
+    fontWeight: 'bold',
+  },
+  clearFiltersText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#DC2626',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   listContainer: {
     flex: 1,
