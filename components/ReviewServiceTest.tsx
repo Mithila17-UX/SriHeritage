@@ -228,18 +228,26 @@ export const ReviewServiceTest: React.FC = () => {
 
     const stars = [];
     for (let i = 1; i <= 5; i++) {
+      const isFilled = i <= rating;
       stars.push(
         <TouchableOpacity
           key={i}
           onPress={() => handleStarPress(i)}
           disabled={!editable}
           style={styles.starButton}
+          activeOpacity={editable ? 0.7 : 1}
         >
-          <Text style={[styles.star, { 
-            fontSize: size, 
-            color: i <= rating ? '#FFD700' : '#E5E7EB' 
-          }]}>
-            ⭐
+          <Text style={[
+            styles.star, 
+            { 
+              fontSize: size, 
+              color: isFilled ? '#FFD700' : '#E5E7EB',
+              textShadowColor: isFilled ? 'rgba(255, 215, 0, 0.5)' : 'transparent',
+              textShadowOffset: { width: 0, height: 1 },
+              textShadowRadius: isFilled ? 2 : 0
+            }
+          ]}>
+            {isFilled ? '★' : '☆'}
           </Text>
         </TouchableOpacity>
       );
@@ -501,7 +509,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   starButton: {
-    padding: 2,
+    padding: 4,
+    borderRadius: 4,
   },
   star: {
     fontSize: 24,

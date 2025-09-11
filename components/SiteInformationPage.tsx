@@ -19,69 +19,16 @@ import { routingServiceOSM } from '../services/routingServiceOSM';
 import { LeafletPageService } from '../services/leafletPage';
 import { reviewService, Review as FirestoreReview, SiteRatingStats } from '../services/reviewService';
 import { authService } from '../services/auth';
-import { databaseService } from '../services/database';
+import { databaseService, Site } from '../services/database';
+import { useSites } from '../hooks/useSites';
 // BEGIN nearby - Import new components
 import { NearbySection } from './NearbySection';
 // END nearby
+import { ReviewFormModal } from './ReviewFormModal';
 
 interface SiteInformationPageProps {
-  site: {
-    id: number;
-    name: string;
-    location: string;
-    distance: string;
-    rating: number;
-    image: string;
-    category: string;
-    description: string;
-    openingHours?: string;
-    entranceFee?: string;
-    visiting_hours?: string; // Old field name
-    entry_fee?: string; // Old field name
-    gallery: string[] | string; // Allow both array and string formats
-    latitude?: number;
-    longitude?: number;
-    coordinates?: {
-      latitude: number;
-      longitude: number;
-    };
-    // BEGIN nearby - Optional fields for nearby functionality
-    subplaces?: Array<{
-      id: number;
-      name: string;
-      category: string;
-      description: string;
-      rating?: number;
-      image?: string;
-      image_url?: string;
-      openingHours?: string;
-      visiting_hours?: string;
-      location: string;
-      latitude: number;
-      longitude: number;
-      created_at: string;
-      updated_at: string;
-      distanceKm?: number;
-    }>;
-    nearby?: Array<{
-      id: number;
-      name: string;
-      category: string;
-      description: string;
-      rating?: number;
-      image?: string;
-      image_url?: string;
-      openingHours?: string;
-      visiting_hours?: string;
-      location: string;
-      latitude: number;
-      longitude: number;
-      created_at: string;
-      updated_at: string;
-      distanceKm?: number;
-    }>;
-    // END nearby
-  };
+  site?: Site;
+  siteId?: string | number;
   isFavorite: boolean;
   isVisited: boolean;
   offlineMode: boolean;
@@ -90,7 +37,7 @@ interface SiteInformationPageProps {
   onVisitStatusChange: (status: 'visited' | 'not-visited' | 'planned') => void;
   onBack: () => void;
   // BEGIN nearby - Optional navigation function
-  onNavigateToSite?: (site: any) => void;
+  onNavigateToSite?: (siteId: string | number) => void;
   // END nearby
 }
 
@@ -196,7 +143,8 @@ const reviews: Review[] = [
 ];
 
 export function SiteInformationPage({ 
-  site, 
+  site: propSite, 
+  siteId,
   isFavorite, 
   isVisited,
   isPlanned,
@@ -208,9 +156,46 @@ export function SiteInformationPage({
   onNavigateToSite
   // END nearby
 }: SiteInformationPageProps) {
-  const [userRating, setUserRating] = useState(0);
-  const [userComment, setUserComment] = useState('');
-  const [userAspectRatings, setUserAspectRatings] = useState<Record<string, number>>({});
+  const { getSiteById } = useSites();
+  
+  // Resolve site from either prop or by ID
+  const site = React.useMemo(() => {
+    if (propSite) {
+      return propSite;
+    }
+    if (siteId) {
+      return getSiteById(siteId);
+    }
+    return null;
+  }, [propSite, siteId, getSiteById]);
+  
+  // If no site found, show error
+  if (!site) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={onBack} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color="#374151" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Site Not Found</Text>
+        </View>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Site not found. Please try again.</Text>
+          <Button onPress={onBack} style={styles.errorButton}>
+            <Text style={styles.errorButtonText}>Go Back</Text>
+          </Button>
+        </View>
+      </View>
+    );
+  }
+  const userRatingRef = useRef(0);
+  const userCommentRef = useRef('');
+  const userAspectRatingsRef = useRef<Record<string, number>>({});
+
+  // For UI display only
+  const [displayUserRating, setDisplayUserRating] = useState(0);
+  const [displayUserComment, setDisplayUserComment] = useState('');
+  const [displayUserAspectRatings, setDisplayUserAspectRatings] = useState<Record<string, number>>({});
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [userLocation, setUserLocation] = useState<Location.LocationObject | null>(null);
   const [locationPermission, setLocationPermission] = useState<boolean>(false);
@@ -236,25 +221,15 @@ export function SiteInformationPage({
   const [activeTab, setActiveTab] = useState<'about' | 'nearby' | 'gallery' | 'reviews'>('about');
   // END nearby
 
-  // Debug logging for site data
+  // Debug logging for site data - only log on site ID change
   useEffect(() => {
     console.log('🔍 SiteInformationPage - Site data received:', {
       id: site.id,
       name: site.name,
-      gallery: site.gallery,
       galleryLength: site.gallery?.length,
-      galleryType: typeof site.gallery,
-      isGalleryArray: Array.isArray(site.gallery),
-      galleryFirstItem: site.gallery?.[0],
-      latitude: site.latitude,
-      longitude: site.longitude,
-      coordinates: site.coordinates,
-      openingHours: site.openingHours,
-      visiting_hours: site.visiting_hours,
-      entranceFee: site.entranceFee,
-      entry_fee: site.entry_fee
+      coordinates: site.coordinates
     });
-  }, [site]);
+  }, [site.id, site.name]); // Only depend on stable identifiers
 
   // Use the actual site rating from Firestore or fall back to admin panel rating
   const averageRating = siteRatingStats?.averageRating || site.rating || 4.5;
@@ -441,6 +416,12 @@ export function SiteInformationPage({
       return;
     }
 
+    // Prevent loading during form interactions
+    if (isFormInteractionRef.current) {
+      console.log('⚠️ Form interaction in progress, skipping review loading');
+      return;
+    }
+
     setIsLoadingReviews(true);
     try {
       // Load reviews for the site
@@ -456,10 +437,13 @@ export function SiteInformationPage({
       setUserExistingReview(userReview);
 
       // If user has existing review, populate the form ONLY if form is not currently being edited
-      if (userReview && !showReviewForm) {
-        setUserRating(userReview.rating);
-        setUserComment(userReview.comment);
-        setUserAspectRatings(userReview.aspectRatings || {});
+      if (userReview && !showReviewForm && !isFormInteractionRef.current) {
+        userRatingRef.current = userReview.rating;
+        userCommentRef.current = userReview.comment;
+        userAspectRatingsRef.current = userReview.aspectRatings || {};
+        setDisplayUserRating(userReview.rating);
+        setDisplayUserComment(userReview.comment);
+        setDisplayUserAspectRatings(userReview.aspectRatings || {});
       }
 
       console.log(`📖 Loaded ${reviews.length} reviews for site ${site.id}`);
@@ -469,7 +453,7 @@ export function SiteInformationPage({
     } finally {
       setIsLoadingReviews(false);
     }
-  }, [site.id]); // Remove showReviewForm dependency to prevent re-loading during form editing
+  }, [site.id, showReviewForm]); // Add showReviewForm back for proper dependency tracking
 
   // Load initial data when component mounts or site changes
   useEffect(() => {
@@ -488,14 +472,18 @@ export function SiteInformationPage({
         }
       } else {
         // Clear review data when user logs out
-        setFirestoreReviews([]);
-        setSiteRatingStats(null);
+        userRatingRef.current = 0;
+        userCommentRef.current = '';
+        userAspectRatingsRef.current = {};
+        setDisplayUserRating(0);
+        setDisplayUserComment('');
+        setDisplayUserAspectRatings({});
         setUserExistingReview(null);
         // Only reset form if it's not currently being used
         if (!showReviewForm) {
-          setUserRating(0);
-          setUserComment('');
-          setUserAspectRatings({});
+          userRatingRef.current = 0;
+          userCommentRef.current = '';
+          userAspectRatingsRef.current = {};
         }
       }
     });
@@ -505,56 +493,56 @@ export function SiteInformationPage({
     };
   }, [loadReviewsAndRating]); // Only depend on loadReviewsAndRating
 
-  // Handle submitting a new review or updating existing review - memoized to prevent re-renders
-  const handleSubmitReview = useCallback(async () => {
+  // Handle submitting a new review or updating existing review - optimized for new modal
+  const handleSubmitReview = useCallback(async (rating: number, comment: string, aspectRatings: Record<string, number>) => {
     if (!authService.isAuthenticated()) {
       Alert.alert('Authentication Required', 'Please log in to submit a review.');
       return;
     }
-
-    if (userRating === 0) {
-      Alert.alert('Rating Required', 'Please provide a rating for this site.');
-      return;
-    }
-
-    if (userComment.trim().length < 10) {
-      Alert.alert('Comment Required', 'Please provide a comment with at least 10 characters.');
-      return;
-    }
-
+    
     setIsSubmittingReview(true);
     try {
+      // Update refs for consistency
+      userRatingRef.current = rating;
+      userCommentRef.current = comment;
+      userAspectRatingsRef.current = aspectRatings;
+      
       if (userExistingReview) {
-        // Update existing review
         await reviewService.updateReview(
           userExistingReview.id,
-          userRating,
-          userComment,
-          userAspectRatings
+          rating,
+          comment,
+          aspectRatings
         );
         Alert.alert('Success', 'Your review has been updated successfully!');
         setIsEditingReview(false);
       } else {
-        // Add new review
         await reviewService.addReview(
           site.id,
-          userRating,
-          userComment,
-          userAspectRatings
+          rating,
+          comment,
+          aspectRatings
         );
         Alert.alert('Success', 'Thank you for your review!');
       }
-
-      // Reset form and reload reviews
+      
+      // Update display state
+      setDisplayUserRating(rating);
+      setDisplayUserComment(comment);
+      setDisplayUserAspectRatings(aspectRatings);
+      
       setShowReviewForm(false);
+      // Reset form interaction flag before reloading reviews
+      isFormInteractionRef.current = false;
       await loadReviewsAndRating();
     } catch (error) {
       console.error('❌ Error submitting review:', error);
       Alert.alert('Error', error instanceof Error ? error.message : 'Failed to submit review. Please try again.');
+      throw error; // Re-throw to let modal handle the error state
     } finally {
       setIsSubmittingReview(false);
     }
-  }, [userRating, userComment, userAspectRatings, userExistingReview, site.id, loadReviewsAndRating]);
+  }, [userExistingReview, site.id, loadReviewsAndRating]);
 
   // Handle deleting user's review - memoized to prevent re-renders
   const handleDeleteReview = useCallback(async () => {
@@ -574,9 +562,12 @@ export function SiteInformationPage({
               Alert.alert('Success', 'Your review has been deleted.');
               
               // Reset form and reload reviews
-              setUserRating(0);
-              setUserComment('');
-              setUserAspectRatings({});
+              userRatingRef.current = 0;
+              userCommentRef.current = '';
+              userAspectRatingsRef.current = {};
+              setDisplayUserRating(0);
+              setDisplayUserComment('');
+              setDisplayUserAspectRatings({});
               setIsEditingReview(false);
               setShowReviewForm(false);
               await loadReviewsAndRating();
@@ -604,36 +595,13 @@ export function SiteInformationPage({
 
   // Reset review form - memoized to prevent re-renders
   const resetReviewForm = useCallback(() => {
-    if (!userExistingReview) {
-      setUserRating(0);
-      setUserComment('');
-      setUserAspectRatings({});
-    } else {
-      // Reset to existing review values
-      setUserRating(userExistingReview.rating);
-      setUserComment(userExistingReview.comment);
-      setUserAspectRatings(userExistingReview.aspectRatings || {});
-    }
     setIsEditingReview(false);
     setShowReviewForm(false);
-  }, [userExistingReview]);
-
-  // Set aspect rating - memoized to prevent re-renders
-  const setAspectRating = useCallback((aspect: string, rating: number) => {
-    isFormInteractionRef.current = true;
-    setUserAspectRatings(prev => ({ ...prev, [aspect]: rating }));
+    // Reset form interaction flag when closing form
+    isFormInteractionRef.current = false;
   }, []);
 
-  // Memoized handlers for form inputs to prevent re-renders
-  const handleRatingChange = useCallback((rating: number) => {
-    isFormInteractionRef.current = true;
-    setUserRating(rating);
-  }, []);
-
-  const handleCommentChange = useCallback((text: string) => {
-    isFormInteractionRef.current = true;
-    setUserComment(text);
-  }, []);
+  // These handlers are no longer needed as the form is now isolated
 
   const handleBookRide = () => {
     Alert.alert('Ride Booking', 'Redirecting to PickMe for ride booking...');
@@ -785,15 +753,26 @@ export function SiteInformationPage({
 
     const stars = [];
     for (let i = 1; i <= 5; i++) {
+      const isFilled = i <= rating;
       stars.push(
         <TouchableOpacity
           key={i}
           onPress={() => handleStarPress(i)}
           disabled={!editable}
           style={styles.starButton}
+          activeOpacity={editable ? 0.7 : 1}
         >
-          <Text style={[styles.star, { fontSize: size, color: i <= rating ? '#FFD700' : '#E5E7EB' }]}>
-            ⭐
+          <Text style={[
+            styles.star, 
+            { 
+              fontSize: size, 
+              color: isFilled ? '#FFD700' : '#E5E7EB',
+              textShadowColor: isFilled ? 'rgba(255, 215, 0, 0.5)' : 'transparent',
+              textShadowOffset: { width: 0, height: 1 },
+              textShadowRadius: isFilled ? 2 : 0
+            }
+          ]}>
+            {isFilled ? '★' : '☆'}
           </Text>
         </TouchableOpacity>
       );
@@ -801,107 +780,6 @@ export function SiteInformationPage({
     return <View style={styles.starContainer}>{stars}</View>;
   });
 
-  // Review Form Modal - Memoized component to prevent unnecessary re-renders
-  const ReviewFormModal = React.memo(() => (
-    <Modal
-      visible={showReviewForm}
-      animationType="slide"
-      presentationStyle="pageSheet"
-    >
-      <View style={styles.reviewFormContainer}>
-        <View style={styles.reviewFormHeader}>
-          <TouchableOpacity
-            style={styles.cancelButton}
-            onPress={resetReviewForm}
-          >
-            <Text style={styles.cancelButtonText}>Cancel</Text>
-          </TouchableOpacity>
-          <Text style={styles.reviewFormTitle}>
-            {userExistingReview ? 'Edit Review' : 'Write a Review'}
-          </Text>
-          <TouchableOpacity
-            style={[styles.submitButton, isSubmittingReview && styles.disabledSubmitButton]}
-            onPress={handleSubmitReview}
-            disabled={isSubmittingReview}
-          >
-            <Text style={styles.submitButtonText}>
-              {isSubmittingReview ? 'Saving...' : 'Submit'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView style={styles.reviewFormContent}>
-          {/* Overall Rating */}
-          <View style={styles.formSection}>
-            <Text style={styles.formSectionTitle}>Overall Rating *</Text>
-            <View style={styles.ratingSection}>
-              <StarRating 
-                rating={userRating} 
-                onRatingChange={handleRatingChange} 
-                editable={true} 
-                size={32}
-              />
-              <Text style={styles.ratingText}>
-                {userRating > 0 ? `${userRating} out of 5 stars` : 'Tap to rate'}
-              </Text>
-            </View>
-          </View>
-
-          {/* Comment */}
-          <View style={styles.formSection}>
-            <Text style={styles.formSectionTitle}>Your Review *</Text>
-            <TextInput
-              style={styles.commentInput}
-              value={userComment}
-              onChangeText={handleCommentChange}
-              placeholder="Share your experience at this heritage site..."
-              multiline={true}
-              numberOfLines={6}
-              textAlignVertical="top"
-              maxLength={500}
-            />
-            <Text style={styles.characterCount}>
-              {userComment.length}/500 characters
-            </Text>
-          </View>
-
-          {/* Aspect Ratings */}
-          <View style={styles.formSection}>
-            <Text style={styles.formSectionTitle}>Rate Specific Aspects</Text>
-            {aspectCategories.map((category) => (
-              <View key={category.aspect} style={styles.aspectRatingRow}>
-                <View style={styles.aspectInfo}>
-                  <Text style={styles.aspectIcon}>{category.icon}</Text>
-                  <View style={styles.aspectText}>
-                    <Text style={styles.aspectName}>{category.aspect}</Text>
-                    <Text style={styles.aspectDescription}>{category.description}</Text>
-                  </View>
-                </View>
-                <StarRating
-                  rating={userAspectRatings[category.aspect] || 0}
-                  onRatingChange={(rating) => setAspectRating(category.aspect, rating)}
-                  editable={true}
-                  size={16}
-                />
-              </View>
-            ))}
-          </View>
-
-          {/* Delete button for existing reviews */}
-          {userExistingReview && (
-            <View style={styles.formSection}>
-              <TouchableOpacity
-                style={styles.deleteButton}
-                onPress={handleDeleteReview}
-              >
-                <Text style={styles.deleteButtonText}>Delete Review</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </ScrollView>
-      </View>
-    </Modal>
-  ));
 
   const lastSyncTime = new Date().toLocaleString();
 
@@ -988,45 +866,19 @@ export function SiteInformationPage({
     nearby: site.nearby || mockNearbyAttractions,
   }), [site, mockSubplaces, mockNearbyAttractions]);
 
-  // Handle navigation to a subplace or nearby site
-  const handleNavigateToSite = useCallback(async (targetSite: any) => {
-    console.log('Navigating to site:', targetSite.id, targetSite.name);
+  // Handle navigation to a nearby site using siteId only
+  const handleNavigateToSite = useCallback((targetSiteId: string | number) => {
+    console.log('🧭 Navigating to site ID:', targetSiteId);
     
-    // If this is a reference with just an ID, try to get the full site data
-    if (targetSite.id && (!targetSite.description || !targetSite.location)) {
-      try {
-        // Load the complete site data
-        const fullSite = await databaseService.getSiteById(targetSite.id);
-        if (fullSite) {
-          console.log('Found full site data for:', fullSite.name);
-          // Preserve distance from original reference
-          const enhancedSite = {
-            ...fullSite,
-            distanceKm: targetSite.distanceKm
-          };
-          
-          // Navigate with the full site data
-          if (typeof onNavigateToSite === 'function') {
-            onNavigateToSite(enhancedSite);
-          } else {
-            Alert.alert('Navigation', `Would navigate to ${enhancedSite.name} (ID: ${enhancedSite.id})`);
-          }
-          return;
-        }
-      } catch (error) {
-        console.error('Error getting full site data:', error);
-        // Continue with fallback below
-      }
-    }
-    
-    // Navigate with whatever data we have
     if (typeof onNavigateToSite === 'function') {
-      onNavigateToSite(targetSite);
+      onNavigateToSite(targetSiteId);
     } else {
       // Fallback: If no onNavigateToSite prop, show an alert
-      Alert.alert('Navigation', `Would navigate to ${targetSite.name}`);
+      const targetSite = getSiteById(targetSiteId);
+      const siteName = targetSite ? targetSite.name : `Site ${targetSiteId}`;
+      Alert.alert('Navigation', `Would navigate to ${siteName} (ID: ${targetSiteId})`);
     }
-  }, [onNavigateToSite]);
+  }, [onNavigateToSite, getSiteById]);
   // END nearby
 
   return (
@@ -1281,15 +1133,13 @@ export function SiteInformationPage({
           </CardContent>
         </Card>
 
-        {/* Review Form Modal */}
-        <ReviewFormModal />
       </ScrollView>
       )}
 
       {/* BEGIN nearby - Nearby Tab Content */}
       {activeTab === 'nearby' && (
         <NearbySection
-          currentSite={enhancedSite}
+          currentSite={site}
           onNavigateToSite={handleNavigateToSite}
           isOffline={offlineMode}
         />
@@ -1375,6 +1225,7 @@ export function SiteInformationPage({
                       style={styles.editReviewButton}
                       onPress={() => {
                         setIsEditingReview(true);
+                        isFormInteractionRef.current = false; // Reset flag when opening form
                         setShowReviewForm(true);
                       }}
                     >
@@ -1396,7 +1247,10 @@ export function SiteInformationPage({
                 <View style={styles.addReviewSection}>
                   <TouchableOpacity
                     style={[styles.addReviewButton, isSubmittingReview && styles.addReviewButtonDisabled]}
-                    onPress={() => setShowReviewForm(true)}
+                    onPress={() => {
+                      isFormInteractionRef.current = false; // Reset flag when opening form
+                      setShowReviewForm(true);
+                    }}
                     disabled={isSubmittingReview}
                   >
                     <Text style={styles.addReviewButtonIcon}>✍️</Text>
@@ -1491,8 +1345,18 @@ export function SiteInformationPage({
         </ScrollView>
       )}
 
-      {/* Review Form Modal - Show on all tabs */}
-      <ReviewFormModal />
+      {/* Review Form Modal - New isolated component */}
+      <ReviewFormModal
+        visible={showReviewForm}
+        userExistingReview={userExistingReview}
+        isSubmittingReview={isSubmittingReview}
+        initialRating={displayUserRating}
+        initialComment={displayUserComment}
+        initialAspectRatings={displayUserAspectRatings}
+        onClose={resetReviewForm}
+        onSubmit={handleSubmitReview}
+        onDelete={userExistingReview ? handleDeleteReview : undefined}
+      />
     </View>
   );
 }
@@ -1941,7 +1805,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   starButton: {
-    padding: 2,
+    padding: 4,
+    borderRadius: 4,
   },
   star: {
     fontSize: 20,
@@ -2201,6 +2066,47 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#9CA3AF', // gray-400
     fontStyle: 'italic',
+  },
+  // Error styles
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1F2937',
+    flex: 1,
+    textAlign: 'center',
+    marginRight: 24, // Compensate for back button
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  errorButton: {
+    backgroundColor: '#EA580C',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  errorButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   // END nearby
 });
