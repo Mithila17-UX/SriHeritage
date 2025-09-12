@@ -69,12 +69,18 @@ export function AdminPanelSettingsTab({ onLogout }: AdminPanelSettingsTabProps) 
         setAppSettings(defaultSettings);
       }
       
-      // Set up real-time listener for settings changes
-      const unsubscribe = onSnapshot(settingsRef, (doc) => {
-        if (doc.exists()) {
-          setAppSettings(doc.data() as AppSettings);
-        }
-      });
+      // Set up real-time listener for settings changes only if authenticated
+      let unsubscribe = () => {};
+      
+      if (auth.currentUser) {
+        unsubscribe = onSnapshot(settingsRef, (doc) => {
+          if (doc.exists()) {
+            setAppSettings(doc.data() as AppSettings);
+          }
+        }, (error) => {
+          console.error('Error listening to settings changes:', error);
+        });
+      }
       
       return unsubscribe;
       
@@ -347,9 +353,9 @@ export function AdminPanelSettingsTab({ onLogout }: AdminPanelSettingsTabProps) 
       </Card>
 
       {/* Danger Zone */}
-      <Card style={[styles.settingsCard, styles.dangerCard]}>
+      <Card style={{...styles.settingsCard, ...styles.dangerCard}}>
         <CardHeader>
-          <Text style={[styles.cardTitle, styles.dangerTitle]}>Danger Zone</Text>
+          <Text style={{...styles.cardTitle, ...styles.dangerTitle}}>Danger Zone</Text>
         </CardHeader>
         <CardContent>
           <Text style={styles.dangerDescription}>

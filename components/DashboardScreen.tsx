@@ -6,6 +6,7 @@ import { Badge } from './ui/badge';
 import { Progress } from './ui/progress';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FirestoreSite } from '../services/firebase';
+import { authService } from '../services/auth';
 
 interface DashboardScreenProps {
   user: { name: string; email: string } | null;
@@ -100,35 +101,36 @@ export function DashboardScreen({ user, visitedSites, favoriteSites, onNavigateT
   useEffect(() => {
     const loadSites = async () => {
       try {
-        // First try to load from Firebase
-        console.log('🔄 DashboardScreen: Loading sites from Firebase...');
-        
-        try {
-          const { getSitesFromFirestore } = await import('../services/firebase');
-          const firestoreSites = await getSitesFromFirestore();
-          
-          if (firestoreSites && firestoreSites.length > 0) {
-            console.log('✅ DashboardScreen: Sites loaded from Firebase:', firestoreSites.length);
-            setHeritageSites(firestoreSites);
-            
-            // Store in AsyncStorage for offline access
-            await AsyncStorage.setItem('firestore-sites', JSON.stringify(firestoreSites));
-            return;
-          }
-        } catch (firebaseError) {
-          console.error('❌ DashboardScreen: Firebase load failed:', firebaseError);
-        }
-        
-        // Fallback to cached data
+        // Load cached data first for immediate display
         const storedSites = await AsyncStorage.getItem('firestore-sites');
         if (storedSites) {
           const parsedSites = JSON.parse(storedSites);
           console.log('📱 DashboardScreen: Loading from cached data:', parsedSites.length);
           setHeritageSites(parsedSites);
         } else {
-          console.log('📱 DashboardScreen: No cached data, using default sites');
+          console.log('� DashboardScreen: No cached data, using default sites');
           setHeritageSites(defaultHeritageSites);
         }
+
+        // Try to fetch fresh data from Firebase
+        console.log('🔄 DashboardScreen: Attempting to fetch fresh data from Firebase...');
+        
+        try {
+          const { getSitesFromFirestore } = await import('../services/firebase');
+          const firestoreSites = await getSitesFromFirestore();
+          
+          if (firestoreSites && firestoreSites.length > 0) {
+            console.log('✅ DashboardScreen: Fresh data loaded from Firebase:', firestoreSites.length);
+            setHeritageSites(firestoreSites);
+            
+            // Update cache with fresh data
+            await AsyncStorage.setItem('firestore-sites', JSON.stringify(firestoreSites));
+          }
+        } catch (firebaseError: any) {
+          console.warn('⚠️ DashboardScreen: Firebase fetch failed, continuing with cached data:', firebaseError.message);
+          // App continues to work with cached data - no error thrown to user
+        }
+        
       } catch (error) {
         console.error('❌ DashboardScreen: Error loading sites:', error);
         setHeritageSites(defaultHeritageSites);
@@ -374,17 +376,34 @@ export function DashboardScreen({ user, visitedSites, favoriteSites, onNavigateT
             <Text style={styles.cardTitle}>📈 Recent Activity</Text>
           </CardHeader>
           <CardContent style={styles.activityContent}>
-            {recentActivities.map((activity, index) => (
-              <View key={index} style={styles.activityItem}>
-                <View style={[styles.activityIcon, styles[activity.color]]}>
-                  <Text style={styles.activityEmoji}>{activity.icon}</Text>
+            {recentActivities.map((activity, index) => {
+              const getActivityIconStyle = (color: string) => {
+                switch (color) {
+                  case 'greenBackground':
+                    return styles.greenBackground;
+                  case 'blueBackground':
+                    return styles.blueBackground;
+                  case 'redBackground':
+                    return styles.redBackground;
+                  case 'orangeBackground':
+                    return styles.orangeBackground;
+                  default:
+                    return styles.blueBackground;
+                }
+              };
+
+              return (
+                <View key={index} style={styles.activityItem}>
+                  <View style={[styles.activityIcon, getActivityIconStyle(activity.color)]}>
+                    <Text style={styles.activityEmoji}>{activity.icon}</Text>
+                  </View>
+                  <View style={styles.activityText}>
+                    <Text style={styles.activityTitle}>{activity.title}</Text>
+                    <Text style={styles.activityTime}>{activity.time}</Text>
+                  </View>
                 </View>
-                <View style={styles.activityText}>
-                  <Text style={styles.activityTitle}>{activity.title}</Text>
-                  <Text style={styles.activityTime}>{activity.time}</Text>
-                </View>
-              </View>
-            ))}
+              );
+            })}
           </CardContent>
         </Card>
       </View>

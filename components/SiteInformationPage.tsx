@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, Share, Modal } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, Share, Modal, TextInput } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
 import { Progress } from './ui/progress';
 import * as Location from 'expo-location';
-import MapView, { Marker, PROVIDER_GOOGLE, Region, Callout, Polyline } from 'react-native-maps';
 // Note: Replace lucide-react icons with React Native compatible icons
 // Note: Tabs, Avatar, Textarea components would need React Native conversion
 // import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
@@ -14,29 +14,21 @@ import MapView, { Marker, PROVIDER_GOOGLE, Region, Callout, Polyline } from 'rea
 // import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { getSitesFromFirestore, FirestoreSite } from '../services/firebase';
+import { DistanceCalculatorService } from '../services/distanceCalculator';
+import { routingServiceOSM } from '../services/routingServiceOSM';
+import { LeafletPageService } from '../services/leafletPage';
+import { reviewService, Review as FirestoreReview, SiteRatingStats } from '../services/reviewService';
+import { authService } from '../services/auth';
+import { databaseService, Site } from '../services/database';
+import { useSites } from '../hooks/useSites';
+// BEGIN nearby - Import new components
+import { NearbySection } from './NearbySection';
+// END nearby
+import { ReviewFormModal } from './ReviewFormModal';
 
 interface SiteInformationPageProps {
-  site: {
-    id: number;
-    name: string;
-    location: string;
-    distance: string;
-    rating: number;
-    image: string;
-    category: string;
-    description: string;
-    openingHours?: string;
-    entranceFee?: string;
-    visiting_hours?: string; // Old field name
-    entry_fee?: string; // Old field name
-    gallery: string[] | string; // Allow both array and string formats
-    latitude?: number;
-    longitude?: number;
-    coordinates?: {
-      latitude: number;
-      longitude: number;
-    };
-  };
+  site?: Site;
+  siteId?: string | number;
   isFavorite: boolean;
   isVisited: boolean;
   offlineMode: boolean;
@@ -44,6 +36,9 @@ interface SiteInformationPageProps {
   isPlanned: boolean;
   onVisitStatusChange: (status: 'visited' | 'not-visited' | 'planned') => void;
   onBack: () => void;
+  // BEGIN nearby - Optional navigation function
+  onNavigateToSite?: (siteId: string | number) => void;
+  // END nearby
 }
 
 interface AspectRating {
@@ -66,6 +61,22 @@ interface Review {
 interface RouteCoordinates {
   latitude: number;
   longitude: number;
+}
+
+interface MapConfig {
+  userLocation?: {
+    latitude: number;
+    longitude: number;
+  };
+  destination: {
+    latitude: number;
+    longitude: number;
+    name: string;
+    description?: string;
+  };
+  routeCoordinates: RouteCoordinates[];
+  showFallbackMessage: boolean;
+  fallbackMessage?: string;
 }
 
 const aspectCategories = [
@@ -132,18 +143,59 @@ const reviews: Review[] = [
 ];
 
 export function SiteInformationPage({ 
-  site, 
+  site: propSite, 
+  siteId,
   isFavorite, 
   isVisited,
   isPlanned,
   offlineMode,
   onToggleFavorite,
   onVisitStatusChange,
-  onBack 
+  onBack,
+  // BEGIN nearby - Optional navigation prop
+  onNavigateToSite
+  // END nearby
 }: SiteInformationPageProps) {
-  const [userRating, setUserRating] = useState(0);
-  const [userComment, setUserComment] = useState('');
-  const [userAspectRatings, setUserAspectRatings] = useState<Record<string, number>>({});
+  const { getSiteById } = useSites();
+  
+  // Resolve site from either prop or by ID
+  const site = React.useMemo(() => {
+    if (propSite) {
+      return propSite;
+    }
+    if (siteId) {
+      return getSiteById(siteId);
+    }
+    return null;
+  }, [propSite, siteId, getSiteById]);
+  
+  // If no site found, show error
+  if (!site) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={onBack} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color="#374151" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Site Not Found</Text>
+        </View>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Site not found. Please try again.</Text>
+          <Button onPress={onBack} style={styles.errorButton}>
+            <Text style={styles.errorButtonText}>Go Back</Text>
+          </Button>
+        </View>
+      </View>
+    );
+  }
+  const userRatingRef = useRef(0);
+  const userCommentRef = useRef('');
+  const userAspectRatingsRef = useRef<Record<string, number>>({});
+
+  // For UI display only
+  const [displayUserRating, setDisplayUserRating] = useState(0);
+  const [displayUserComment, setDisplayUserComment] = useState('');
+  const [displayUserAspectRatings, setDisplayUserAspectRatings] = useState<Record<string, number>>({});
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [userLocation, setUserLocation] = useState<Location.LocationObject | null>(null);
   const [locationPermission, setLocationPermission] = useState<boolean>(false);
@@ -151,37 +203,37 @@ export function SiteInformationPage({
   const [showMapModal, setShowMapModal] = useState<boolean>(false);
   const [nearbySites, setNearbySites] = useState<FirestoreSite[]>([]);
   const [routeCoordinates, setRouteCoordinates] = useState<RouteCoordinates[]>([]);
-  const [mapRegion, setMapRegion] = useState<Region>({
-    latitude: 7.8731, // Sri Lanka center
-    longitude: 80.7718,
-    latitudeDelta: 0.5,
-    longitudeDelta: 0.5,
-  });
+  const [mapConfig, setMapConfig] = useState<MapConfig | null>(null);
   const [isGettingDirections, setIsGettingDirections] = useState(false);
 
-  // Debug logging for site data
+  // New state for reviews and ratings
+  const [firestoreReviews, setFirestoreReviews] = useState<FirestoreReview[]>([]);
+  const [siteRatingStats, setSiteRatingStats] = useState<SiteRatingStats | null>(null);
+  const [userExistingReview, setUserExistingReview] = useState<FirestoreReview | null>(null);
+  const [isLoadingReviews, setIsLoadingReviews] = useState(false);
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const [isEditingReview, setIsEditingReview] = useState(false);
+
+  // Ref to prevent unnecessary re-renders during form interactions
+  const isFormInteractionRef = useRef(false);
+
+  // BEGIN nearby - Tab state for new tab system
+  const [activeTab, setActiveTab] = useState<'about' | 'nearby' | 'gallery' | 'reviews'>('about');
+  // END nearby
+
+  // Debug logging for site data - only log on site ID change
   useEffect(() => {
     console.log('🔍 SiteInformationPage - Site data received:', {
       id: site.id,
       name: site.name,
-      gallery: site.gallery,
       galleryLength: site.gallery?.length,
-      galleryType: typeof site.gallery,
-      isGalleryArray: Array.isArray(site.gallery),
-      galleryFirstItem: site.gallery?.[0],
-      latitude: site.latitude,
-      longitude: site.longitude,
-      coordinates: site.coordinates,
-      openingHours: site.openingHours,
-      visiting_hours: site.visiting_hours,
-      entranceFee: site.entranceFee,
-      entry_fee: site.entry_fee
+      coordinates: site.coordinates
     });
-  }, [site]);
+  }, [site.id, site.name]); // Only depend on stable identifiers
 
-  // Use the actual site rating from admin panel instead of calculating from reviews
-  const averageRating = site.rating || 4.5;
-  const totalReviews = reviews.length; // Keep this for display purposes
+  // Use the actual site rating from Firestore or fall back to admin panel rating
+  const averageRating = siteRatingStats?.averageRating || site.rating || 4.5;
+  const totalReviews = siteRatingStats?.totalReviews || firestoreReviews.length || 0;
 
   // Request location permission and get user location
   const requestLocationPermission = async () => {
@@ -193,7 +245,7 @@ export function SiteInformationPage({
           accuracy: Location.Accuracy.High,
         });
         setUserLocation(location);
-        calculateDistanceFromUser(location);
+        await calculateDistanceFromUser(location); // Make this async
         console.log('Location permission granted and location obtained');
       } else {
         setLocationPermission(false);
@@ -227,27 +279,104 @@ export function SiteInformationPage({
     return R * c;
   };
 
-  // Calculate distance from user location to site
-  const calculateDistanceFromUser = (location: Location.LocationObject) => {
+  // Calculate distance from user location to site using road distance
+  const calculateDistanceFromUser = async (location: Location.LocationObject) => {
     const siteLat = site.latitude || site.coordinates?.latitude;
     const siteLon = site.longitude || site.coordinates?.longitude;
     
     if (siteLat && siteLon) {
-      const distance = calculateDistance(
-        location.coords.latitude,
-        location.coords.longitude,
-        siteLat,
-        siteLon
-      );
-      setCalculatedDistance(`${distance.toFixed(1)} km away`);
+      try {
+        // Calculate both direct and road distance
+        const distanceInfo = await DistanceCalculatorService.calculateDistanceFromUserLocation(
+          {
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude
+          },
+          {
+            latitude: siteLat,
+            longitude: siteLon
+          },
+          true // Use road distance
+        );
+
+        // Display road distance if available, otherwise direct distance
+        if (distanceInfo.roadDistance !== null) {
+          let distanceText = `${distanceInfo.roadDistance.toFixed(1)} km away`;
+          
+          // Add estimated time if available
+          if (distanceInfo.estimatedTime) {
+            const hours = Math.floor(distanceInfo.estimatedTime / 60);
+            const minutes = distanceInfo.estimatedTime % 60;
+            
+            if (hours > 0) {
+              distanceText += ` (${hours}h ${minutes}m)`;
+            } else {
+              distanceText += ` (${minutes}m)`;
+            }
+          }
+          
+          distanceText += ' via road';
+          setCalculatedDistance(distanceText);
+        } else {
+          // Fallback to direct distance
+          setCalculatedDistance(`${distanceInfo.directDistance.toFixed(1)} km away (direct)`);
+        }
+        
+        console.log('📍 Distance calculated:', {
+          direct: distanceInfo.directDistance,
+          road: distanceInfo.roadDistance,
+          time: distanceInfo.estimatedTime
+        });
+        
+      } catch (error) {
+        console.error('❌ Error calculating road distance:', error);
+        // Fallback to simple direct distance calculation
+        const distance = calculateDistance(
+          location.coords.latitude,
+          location.coords.longitude,
+          siteLat,
+          siteLon
+        );
+        setCalculatedDistance(`${distance.toFixed(1)} km away (direct)`);
+      }
     } else {
       setCalculatedDistance(site.distance || 'Distance unavailable');
     }
   };
 
-  // Generate route coordinates (simplified - in real app you'd use Google Directions API)
-  const generateRouteCoordinates = (startLat: number, startLon: number, endLat: number, endLon: number): RouteCoordinates[] => {
-    // Create a simple straight line route (in production, use Google Directions API)
+  // Generate route coordinates using OSRM (OpenStreetMap routing)
+  const generateRouteCoordinates = async (startLat: number, startLon: number, endLat: number, endLon: number): Promise<{ coordinates: RouteCoordinates[]; isFallback: boolean; }> => {
+    try {
+      console.log('🗺️ Getting route from OSRM (OpenStreetMap)...');
+      const route = await routingServiceOSM.getRoute(
+        { latitude: startLat, longitude: startLon },
+        { latitude: endLat, longitude: endLon },
+        { mode: 'driving', fallbackToStraightLine: true }
+      );
+
+      if (route && route.coordinates.length > 0) {
+        console.log('✅ Route obtained from OSM with', route.coordinates.length, 'points');
+        console.log('🛣️ Route info:', {
+          distance: route.distance + 'km',
+          duration: route.duration + 'min',
+          isFallback: route.isFallback
+        });
+        
+        return {
+          coordinates: route.coordinates.map((coord: any) => ({
+            latitude: coord.latitude,
+            longitude: coord.longitude
+          })),
+          isFallback: route.isFallback || false
+        };
+      } else {
+        console.warn('⚠️ No route found from OSRM, using fallback');
+      }
+    } catch (error) {
+      console.error('❌ Error getting route from OSRM:', error);
+    }
+
+    // Fallback: Create a simple straight line route
     const steps = 10;
     const coordinates: RouteCoordinates[] = [];
     
@@ -259,7 +388,8 @@ export function SiteInformationPage({
       });
     }
     
-    return coordinates;
+    console.log('📍 Using fallback straight-line route with', coordinates.length, 'points');
+    return { coordinates, isFallback: true };
   };
 
   // Load nearby sites from Firestore
@@ -278,6 +408,200 @@ export function SiteInformationPage({
   useEffect(() => {
     requestLocationPermission();
   }, []);
+
+  // Load reviews and rating statistics - memoized to prevent unnecessary re-renders
+  const loadReviewsAndRating = useCallback(async () => {
+    if (!authService.isAuthenticated()) {
+      console.log('⚠️ User not authenticated, skipping review loading');
+      return;
+    }
+
+    // Prevent loading during form interactions
+    if (isFormInteractionRef.current) {
+      console.log('⚠️ Form interaction in progress, skipping review loading');
+      return;
+    }
+
+    setIsLoadingReviews(true);
+    try {
+      // Load reviews for the site
+      const reviews = await reviewService.getReviewsForSite(site.id);
+      setFirestoreReviews(reviews);
+
+      // Load rating statistics
+      const stats = await reviewService.getSiteRatingStats(site.id);
+      setSiteRatingStats(stats);
+
+      // Check if current user has already reviewed this site
+      const userReview = await reviewService.getUserReviewForSite(site.id);
+      setUserExistingReview(userReview);
+
+      // If user has existing review, populate the form ONLY if form is not currently being edited
+      if (userReview && !showReviewForm && !isFormInteractionRef.current) {
+        userRatingRef.current = userReview.rating;
+        userCommentRef.current = userReview.comment;
+        userAspectRatingsRef.current = userReview.aspectRatings || {};
+        setDisplayUserRating(userReview.rating);
+        setDisplayUserComment(userReview.comment);
+        setDisplayUserAspectRatings(userReview.aspectRatings || {});
+      }
+
+      console.log(`📖 Loaded ${reviews.length} reviews for site ${site.id}`);
+    } catch (error) {
+      console.error('❌ Error loading reviews:', error);
+      Alert.alert('Error', 'Failed to load reviews. Please try again.');
+    } finally {
+      setIsLoadingReviews(false);
+    }
+  }, [site.id, showReviewForm]); // Add showReviewForm back for proper dependency tracking
+
+  // Load initial data when component mounts or site changes
+  useEffect(() => {
+    if (authService.isAuthenticated()) {
+      loadReviewsAndRating();
+    }
+  }, [loadReviewsAndRating]);
+
+  // Handle auth state changes separately to avoid interference with form state
+  useEffect(() => {
+    const unsubscribeAuth = authService.onAuthStateChanged((user) => {
+      if (user) {
+        // Only reload if we don't have review data yet
+        if (firestoreReviews.length === 0 && !isLoadingReviews) {
+          loadReviewsAndRating();
+        }
+      } else {
+        // Clear review data when user logs out
+        userRatingRef.current = 0;
+        userCommentRef.current = '';
+        userAspectRatingsRef.current = {};
+        setDisplayUserRating(0);
+        setDisplayUserComment('');
+        setDisplayUserAspectRatings({});
+        setUserExistingReview(null);
+        // Only reset form if it's not currently being used
+        if (!showReviewForm) {
+          userRatingRef.current = 0;
+          userCommentRef.current = '';
+          userAspectRatingsRef.current = {};
+        }
+      }
+    });
+
+    return () => {
+      unsubscribeAuth();
+    };
+  }, [loadReviewsAndRating]); // Only depend on loadReviewsAndRating
+
+  // Handle submitting a new review or updating existing review - optimized for new modal
+  const handleSubmitReview = useCallback(async (rating: number, comment: string, aspectRatings: Record<string, number>) => {
+    if (!authService.isAuthenticated()) {
+      Alert.alert('Authentication Required', 'Please log in to submit a review.');
+      return;
+    }
+    
+    setIsSubmittingReview(true);
+    try {
+      // Update refs for consistency
+      userRatingRef.current = rating;
+      userCommentRef.current = comment;
+      userAspectRatingsRef.current = aspectRatings;
+      
+      if (userExistingReview) {
+        await reviewService.updateReview(
+          userExistingReview.id,
+          rating,
+          comment,
+          aspectRatings
+        );
+        Alert.alert('Success', 'Your review has been updated successfully!');
+        setIsEditingReview(false);
+      } else {
+        await reviewService.addReview(
+          site.id,
+          rating,
+          comment,
+          aspectRatings
+        );
+        Alert.alert('Success', 'Thank you for your review!');
+      }
+      
+      // Update display state
+      setDisplayUserRating(rating);
+      setDisplayUserComment(comment);
+      setDisplayUserAspectRatings(aspectRatings);
+      
+      setShowReviewForm(false);
+      // Reset form interaction flag before reloading reviews
+      isFormInteractionRef.current = false;
+      await loadReviewsAndRating();
+    } catch (error) {
+      console.error('❌ Error submitting review:', error);
+      Alert.alert('Error', error instanceof Error ? error.message : 'Failed to submit review. Please try again.');
+      throw error; // Re-throw to let modal handle the error state
+    } finally {
+      setIsSubmittingReview(false);
+    }
+  }, [userExistingReview, site.id, loadReviewsAndRating]);
+
+  // Handle deleting user's review - memoized to prevent re-renders
+  const handleDeleteReview = useCallback(async () => {
+    if (!userExistingReview) return;
+
+    Alert.alert(
+      'Delete Review',
+      'Are you sure you want to delete your review? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await reviewService.deleteReview(userExistingReview.id);
+              Alert.alert('Success', 'Your review has been deleted.');
+              
+              // Reset form and reload reviews
+              userRatingRef.current = 0;
+              userCommentRef.current = '';
+              userAspectRatingsRef.current = {};
+              setDisplayUserRating(0);
+              setDisplayUserComment('');
+              setDisplayUserAspectRatings({});
+              setIsEditingReview(false);
+              setShowReviewForm(false);
+              await loadReviewsAndRating();
+            } catch (error) {
+              console.error('❌ Error deleting review:', error);
+              Alert.alert('Error', 'Failed to delete review. Please try again.');
+            }
+          }
+        }
+      ]
+    );
+  }, [userExistingReview, loadReviewsAndRating]);
+
+  // Handle marking a review as helpful - memoized to prevent re-renders
+  const handleMarkHelpful = useCallback(async (reviewId: string) => {
+    try {
+      await reviewService.markReviewHelpful(reviewId);
+      // Reload reviews to show updated helpful count
+      await loadReviewsAndRating();
+    } catch (error) {
+      console.error('❌ Error marking review as helpful:', error);
+      Alert.alert('Error', 'Failed to mark review as helpful.');
+    }
+  }, [loadReviewsAndRating]);
+
+  // Reset review form - memoized to prevent re-renders
+  const resetReviewForm = useCallback(() => {
+    setIsEditingReview(false);
+    setShowReviewForm(false);
+    // Reset form interaction flag when closing form
+    isFormInteractionRef.current = false;
+  }, []);
+
+  // These handlers are no longer needed as the form is now isolated
 
   const handleBookRide = () => {
     Alert.alert('Ride Booking', 'Redirecting to PickMe for ride booking...');
@@ -325,7 +649,7 @@ export function SiteInformationPage({
             accuracy: Location.Accuracy.High,
           });
           setUserLocation(location);
-          calculateDistanceFromUser(location);
+          await calculateDistanceFromUser(location); // Make this async
           console.log('✅ User location obtained:', location.coords);
         } catch (error) {
           console.error('❌ Error getting current location:', error);
@@ -361,49 +685,43 @@ export function SiteInformationPage({
       // Load nearby sites
       await loadNearbySites();
 
-      // Generate route coordinates
-      const route = generateRouteCoordinates(
+      // Generate route coordinates using OSRM (OpenStreetMap routing)
+      const routeResult = await generateRouteCoordinates(
         userLocation.coords.latitude,
         userLocation.coords.longitude,
         siteLat,
         siteLon
       );
-      setRouteCoordinates(route);
+      
+      console.log('🗺️ Setting route coordinates:', routeResult.coordinates.length, 'points');
+      if (routeResult.coordinates.length > 0) {
+        console.log('📍 Route start:', routeResult.coordinates[0]);
+        console.log('🎯 Route end:', routeResult.coordinates[routeResult.coordinates.length - 1]);
+      }
+      setRouteCoordinates(routeResult.coordinates);
 
-      // Calculate the bounds to include both user location and destination
-      const userLat = userLocation.coords.latitude;
-      const userLon = userLocation.coords.longitude;
-
-      // Find the minimum and maximum coordinates
-      const minLat = Math.min(userLat, siteLat);
-      const maxLat = Math.max(userLat, siteLat);
-      const minLon = Math.min(userLon, siteLon);
-      const maxLon = Math.max(userLon, siteLon);
-
-      // Calculate the center point
-      const centerLat = (minLat + maxLat) / 2;
-      const centerLon = (minLon + maxLon) / 2;
-
-      // Calculate the span with padding
-      const latDelta = (maxLat - minLat) * 1.5; // 50% padding
-      const lonDelta = (maxLon - minLon) * 1.5; // 50% padding
-
-      // Ensure minimum zoom level for better visibility
-      const minDelta = 0.01; // Minimum zoom level
-      const finalLatDelta = Math.max(latDelta, minDelta);
-      const finalLonDelta = Math.max(lonDelta, minDelta);
-
-      // Update map region to show the entire route
-      const newRegion: Region = {
-        latitude: centerLat,
-        longitude: centerLon,
-        latitudeDelta: finalLatDelta,
-        longitudeDelta: finalLonDelta,
+      // Prepare map configuration for WebView
+      const config: MapConfig = {
+        userLocation: {
+          latitude: userLocation.coords.latitude,
+          longitude: userLocation.coords.longitude,
+        },
+        destination: {
+          latitude: siteLat,
+          longitude: siteLon,
+          name: site.name,
+          description: site.location,
+        },
+        routeCoordinates: routeResult.coordinates,
+        showFallbackMessage: routeResult.isFallback,
+        fallbackMessage: routeResult.isFallback 
+          ? "OSRM routing unavailable. Showing direct route." 
+          : undefined,
       };
 
-      setMapRegion(newRegion);
+      setMapConfig(config);
       setShowMapModal(true);
-      console.log('✅ Map modal opened with directions');
+      console.log('✅ Map modal opened with OpenStreetMap directions');
     } finally {
       setIsGettingDirections(false);
     }
@@ -420,24 +738,148 @@ export function SiteInformationPage({
     }
   };
 
-  const handleSubmitReview = () => {
-    if (userRating === 0) {
-      Alert.alert('Review Required', 'Please provide an overall rating');
-      return;
-    }
-    
-    Alert.alert('Success', 'Review submitted successfully!');
-    setShowReviewForm(false);
-    setUserRating(0);
-    setUserAspectRatings({});
-    setUserComment('');
-  };
+  // Star Rating Component - memoized to prevent unnecessary re-renders
+  const StarRating = React.memo(({ rating, onRatingChange, editable = false, size = 20 }: {
+    rating: number;
+    onRatingChange?: (rating: number) => void;
+    editable?: boolean;
+    size?: number;
+  }) => {
+    const handleStarPress = useCallback((starRating: number) => {
+      if (editable && onRatingChange) {
+        onRatingChange(starRating);
+      }
+    }, [editable, onRatingChange]);
 
-  const setAspectRating = (aspect: string, rating: number) => {
-    setUserAspectRatings(prev => ({ ...prev, [aspect]: rating }));
-  };
+    const stars = [];
+    for (let i = 1; i <= 5; i++) {
+      const isFilled = i <= rating;
+      stars.push(
+        <TouchableOpacity
+          key={i}
+          onPress={() => handleStarPress(i)}
+          disabled={!editable}
+          style={styles.starButton}
+          activeOpacity={editable ? 0.7 : 1}
+        >
+          <Text style={[
+            styles.star, 
+            { 
+              fontSize: size, 
+              color: isFilled ? '#FFD700' : '#E5E7EB',
+              textShadowColor: isFilled ? 'rgba(255, 215, 0, 0.5)' : 'transparent',
+              textShadowOffset: { width: 0, height: 1 },
+              textShadowRadius: isFilled ? 2 : 0
+            }
+          ]}>
+            {isFilled ? '★' : '☆'}
+          </Text>
+        </TouchableOpacity>
+      );
+    }
+    return <View style={styles.starContainer}>{stars}</View>;
+  });
+
 
   const lastSyncTime = new Date().toLocaleString();
+
+  // BEGIN nearby - Mock data for subplaces and nearby attractions
+  // TODO: Replace with real backend data population
+  const mockSubplaces = React.useMemo(() => {
+    if (site.name.includes('Temple of the Sacred Tooth Relic')) {
+      return [
+        {
+          id: 1001,
+          name: 'Royal Palace Complex',
+          category: 'Palace',
+          description: 'Former royal residence with beautiful architecture and gardens',
+          rating: 4.3,
+          image: 'https://example.com/royal-palace.jpg',
+          openingHours: '8:00 AM - 5:00 PM',
+          location: 'Kandy',
+          latitude: 7.2906,
+          longitude: 80.6337,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        {
+          id: 1002,
+          name: 'Sacred Tooth Museum',
+          category: 'Museum',
+          description: 'Museum showcasing artifacts and history of the sacred tooth relic',
+          rating: 4.1,
+          image: 'https://example.com/tooth-museum.jpg',
+          openingHours: '8:00 AM - 7:00 PM',
+          location: 'Kandy',
+          latitude: 7.2907,
+          longitude: 80.6338,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }
+      ];
+    }
+    return [];
+  }, [site.name]);
+
+  const mockNearbyAttractions = React.useMemo(() => {
+    if (site.name.includes('Temple of the Sacred Tooth Relic')) {
+      return [
+        {
+          id: 2001,
+          name: 'Kandy Lake',
+          category: 'Natural Site',
+          description: 'Scenic artificial lake created by the last king of Kandy, perfect for evening walks',
+          rating: 4.2,
+          image: 'https://example.com/kandy-lake.jpg',
+          openingHours: '6:00 AM - 6:00 PM',
+          location: 'Kandy',
+          latitude: 7.2916,
+          longitude: 80.6340,
+          distanceKm: 0.3,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        {
+          id: 2002,
+          name: 'Royal Botanical Gardens',
+          category: 'Botanical Garden',
+          description: 'World-renowned botanical gardens with over 4000 species of plants',
+          rating: 4.6,
+          image: 'https://example.com/botanical-gardens.jpg',
+          openingHours: '7:30 AM - 5:00 PM',
+          location: 'Peradeniya, Kandy',
+          latitude: 7.2733,
+          longitude: 80.5996,
+          distanceKm: 1.8,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }
+      ];
+    }
+    return [];
+  }, [site.name]);
+
+  // Enhance site data with mock subplaces and nearby data
+  const enhancedSite = React.useMemo(() => ({
+    ...site,
+    subplaces: site.subplaces || mockSubplaces,
+    nearby: site.nearby || mockNearbyAttractions,
+  }), [site, mockSubplaces, mockNearbyAttractions]);
+
+  // Handle navigation to a nearby site using siteId only
+  const handleNavigateToSite = useCallback((targetSiteId: string | number) => {
+    console.log('🧭 Navigating to site ID:', targetSiteId);
+    
+    if (typeof onNavigateToSite === 'function') {
+      onNavigateToSite(targetSiteId);
+    } else {
+      // Fallback: If no onNavigateToSite prop, show an alert
+      const targetSite = getSiteById(targetSiteId);
+      const siteName = targetSite ? targetSite.name : `Site ${targetSiteId}`;
+      Alert.alert('Navigation', `Would navigate to ${siteName} (ID: ${targetSiteId})`);
+    }
+  }, [onNavigateToSite, getSiteById]);
+  // END nearby
 
   return (
     <View style={styles.container}>
@@ -464,74 +906,43 @@ export function SiteInformationPage({
             </View>
           </View>
 
-          {/* Map View */}
-          <MapView
-            style={styles.fullScreenMap}
-            provider={PROVIDER_GOOGLE}
-            region={mapRegion}
-            showsUserLocation={true}
-            showsMyLocationButton={true}
-            showsCompass={true}
-            showsScale={true}
-            onRegionChangeComplete={setMapRegion}
-          >
-            {/* User Location Marker */}
-            {userLocation && (
-              <Marker
-                coordinate={{
-                  latitude: userLocation.coords.latitude,
-                  longitude: userLocation.coords.longitude,
-                }}
-                title="Your Location"
-                description="You are here"
-                pinColor="#10B981"
-              />
-            )}
-
-            {/* Destination Marker */}
-            {site.latitude && site.longitude && (
-              <Marker
-                coordinate={{
-                  latitude: site.latitude,
-                  longitude: site.longitude,
-                }}
-                title={site.name}
-                description={site.location}
-                pinColor="#EF4444"
-              />
-            )}
-
-            {/* Nearby Sites Markers */}
-            {nearbySites.map((nearbySite) => {
-              const latitude = nearbySite.latitude || nearbySite.coordinates?.latitude;
-              const longitude = nearbySite.longitude || nearbySite.coordinates?.longitude;
-              
-              if (!latitude || !longitude) return null;
-
-              return (
-                <Marker
-                  key={nearbySite.id}
-                  coordinate={{
-                    latitude,
-                    longitude,
-                  }}
-                  title={nearbySite.name}
-                  description={nearbySite.location}
-                  pinColor="#3B82F6"
-                />
-              );
-            })}
-
-            {/* Route Polyline */}
-            {routeCoordinates.length > 0 && (
-              <Polyline
-                coordinates={routeCoordinates}
-                strokeColor="#2563EB"
-                strokeWidth={3}
-                lineDashPattern={[1]}
-              />
-            )}
-          </MapView>
+          {/* WebView with Leaflet Map */}
+          {mapConfig && (
+            <WebView
+              style={styles.fullScreenMap}
+              source={{ 
+                html: LeafletPageService.generateMapHTML(mapConfig)
+              }}
+              javaScriptEnabled={true}
+              allowFileAccess={false}
+              allowFileAccessFromFileURLs={false}
+              allowUniversalAccessFromFileURLs={false}
+              mixedContentMode="never"
+              onError={(syntheticEvent) => {
+                const { nativeEvent } = syntheticEvent;
+                console.error('WebView error:', nativeEvent);
+                Alert.alert('Map Error', 'Failed to load map. Please try again.');
+              }}
+              onHttpError={(syntheticEvent) => {
+                const { nativeEvent } = syntheticEvent;
+                console.error('WebView HTTP error:', nativeEvent);
+              }}
+              onMessage={(event) => {
+                try {
+                  const data = JSON.parse(event.nativeEvent.data);
+                  console.log('Message from WebView:', data);
+                } catch (error) {
+                  console.log('WebView message:', event.nativeEvent.data);
+                }
+              }}
+              startInLoadingState={true}
+              renderLoading={() => (
+                <View style={styles.mapLoadingContainer}>
+                  <Text style={styles.mapLoadingText}>Loading map...</Text>
+                </View>
+              )}
+            />
+          )}
         </View>
       </Modal>
 
@@ -605,7 +1016,38 @@ export function SiteInformationPage({
       </View>
 
       {/* Content */}
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+      {/* BEGIN nearby - Tab bar */}
+      <View style={styles.tabBar}>
+        <TouchableOpacity
+          style={[styles.tabButton, activeTab === 'about' && styles.tabButtonActive]}
+          onPress={() => setActiveTab('about')}
+        >
+          <Text style={[styles.tabText, activeTab === 'about' && styles.tabTextActive]}>About</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tabButton, activeTab === 'nearby' && styles.tabButtonActive]}
+          onPress={() => setActiveTab('nearby')}
+        >
+          <Text style={[styles.tabText, activeTab === 'nearby' && styles.tabTextActive]}>Nearby</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tabButton, activeTab === 'gallery' && styles.tabButtonActive]}
+          onPress={() => setActiveTab('gallery')}
+        >
+          <Text style={[styles.tabText, activeTab === 'gallery' && styles.tabTextActive]}>Gallery</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tabButton, activeTab === 'reviews' && styles.tabButtonActive]}
+          onPress={() => setActiveTab('reviews')}
+        >
+          <Text style={[styles.tabText, activeTab === 'reviews' && styles.tabTextActive]}>Reviews</Text>
+        </TouchableOpacity>
+      </View>
+      {/* END nearby */}
+
+      {/* Tab Content */}
+      {activeTab === 'about' && (
+        <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         {/* Basic Info */}
         <Card style={styles.infoCard}>
           <CardContent style={{
@@ -691,97 +1133,241 @@ export function SiteInformationPage({
           </CardContent>
         </Card>
 
-        {/* Gallery Preview */}
-        {(() => {
-          // Handle different gallery data formats
-          let galleryImages: string[] = [];
-          
-          if (Array.isArray(site.gallery)) {
-            galleryImages = site.gallery;
-          } else if (typeof site.gallery === 'string') {
-            // If gallery is a string, try to parse it as JSON or split by comma
-            try {
-              const parsed = JSON.parse(site.gallery);
-              galleryImages = Array.isArray(parsed) ? parsed : [site.gallery];
-            } catch {
-              // If parsing fails, treat as comma-separated string
-              galleryImages = site.gallery.split(',').map(url => url.trim()).filter(url => url.length > 0);
+      </ScrollView>
+      )}
+
+      {/* BEGIN nearby - Nearby Tab Content */}
+      {activeTab === 'nearby' && (
+        <NearbySection
+          currentSite={site}
+          onNavigateToSite={handleNavigateToSite}
+          isOffline={offlineMode}
+        />
+      )}
+      {/* END nearby */}
+
+      {/* Gallery Tab Content */}
+      {activeTab === 'gallery' && (
+        <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+          {(() => {
+            // Handle different gallery data formats
+            let galleryImages: string[] = [];
+            
+            if (Array.isArray(site.gallery)) {
+              galleryImages = site.gallery;
+            } else if (typeof site.gallery === 'string') {
+              try {
+                const parsed = JSON.parse(site.gallery);
+                galleryImages = Array.isArray(parsed) ? parsed : [site.gallery];
+              } catch {
+                galleryImages = site.gallery.split(',').map(url => url.trim()).filter(url => url.length > 0);
+              }
             }
-          }
-          
-          console.log('🖼️ Gallery processing:', {
-            originalGallery: site.gallery,
-            processedImages: galleryImages,
-            imageCount: galleryImages.length
-          });
-          
-          return galleryImages.length > 0 ? (
-            <Card style={styles.galleryCard}>
-              <CardContent style={{
-                ...styles.galleryCardContent,
-                paddingTop: 16,
-                paddingBottom: 16
-              }}>
-                <Text style={styles.sectionTitle}>Gallery</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.galleryScroll}>
-                  {galleryImages.map((imageUrl, index) => {
-                    console.log(`🖼️ Gallery image ${index}:`, imageUrl);
-                    return (
+            
+            return galleryImages.length > 0 ? (
+              <Card style={styles.galleryCard}>
+                <CardContent style={{
+                  ...styles.galleryCardContent,
+                  paddingTop: 16,
+                  paddingBottom: 16
+                }}>
+                  <Text style={styles.sectionTitle}>Gallery</Text>
+                  <View style={styles.galleryGrid}>
+                    {galleryImages.map((imageUrl, index) => (
                       <Image
                         key={index}
                         source={{ uri: imageUrl }}
-                        style={styles.galleryImage}
+                        style={styles.galleryGridImage}
                         resizeMode="cover"
                         onError={(error) => console.log(`❌ Gallery image ${index} error:`, error)}
                       />
-                    );
-                  })}
-                </ScrollView>
-              </CardContent>
-            </Card>
-          ) : null;
-        })()}
-
-        {/* Reviews Summary */}
-        <Card style={styles.reviewsCard}>
-          <CardContent style={{
-            ...styles.reviewsCardContent,
-            paddingTop: 16,
-            paddingBottom: 16
-          }}>
-            <Text style={styles.sectionTitle}>Reviews & Ratings</Text>
-            <View style={styles.reviewsSummary}>
-              <View style={styles.overallRating}>
-                <Text style={styles.overallRatingNumber}>{averageRating.toFixed(1)}</Text>
-                <Text style={styles.overallRatingStars}>
-                  {'⭐'.repeat(Math.floor(averageRating))}
-                  {averageRating % 1 >= 0.5 ? '⭐' : ''}
-                </Text>
-                <Text style={styles.totalReviewsText}>{totalReviews} reviews</Text>
-              </View>
-            </View>
-            
-            {/* Recent Reviews */}
-            <View style={styles.recentReviews}>
-              {reviews.slice(0, 2).map((review) => (
-                <View key={review.id} style={styles.reviewItem}>
-                  <View style={styles.reviewHeader}>
-                    <View style={styles.reviewerAvatar}>
-                      <Text style={styles.reviewerAvatarText}>{review.avatar}</Text>
-                    </View>
-                    <View style={styles.reviewerInfo}>
-                      <Text style={styles.reviewerName}>{review.author}</Text>
-                      <Text style={styles.reviewDate}>{review.date}</Text>
-                    </View>
-                    <Text style={styles.reviewRating}>⭐ {review.rating}</Text>
+                    ))}
                   </View>
-                  <Text style={styles.reviewComment}>{review.comment}</Text>
+                </CardContent>
+              </Card>
+            ) : (
+              <View style={styles.emptyStateContainer}>
+                <Text style={styles.emptyStateText}>No gallery images available</Text>
+              </View>
+            );
+          })()}
+        </ScrollView>
+      )}
+
+      {/* Reviews Tab Content */}
+      {activeTab === 'reviews' && (
+        <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+          <Card style={styles.reviewsCard}>
+            <CardContent style={{
+              ...styles.reviewsCardContent,
+              paddingTop: 16,
+              paddingBottom: 0
+            }}>
+              <Text style={styles.sectionTitle}>Reviews & Ratings</Text>
+              
+              {/* Rating Summary */}
+              <View style={styles.reviewsSummary}>
+                <View style={styles.overallRating}>
+                  <Text style={styles.overallRatingNumber}>{averageRating.toFixed(1)}</Text>
+                  <StarRating rating={averageRating} size={20} />
+                  <Text style={styles.totalReviewsText}>
+                    {totalReviews === 1 ? '1 review' : `${totalReviews} reviews`}
+                  </Text>
                 </View>
-              ))}
-            </View>
-          </CardContent>
-        </Card>
-      </ScrollView>
+              </View>
+
+              {/* User's Existing Review */}
+              {userExistingReview && (
+                <View style={styles.existingReviewSection}>
+                  <View style={styles.existingReviewHeader}>
+                    <Text style={styles.existingReviewTitle}>Your Review</Text>
+                    <TouchableOpacity
+                      style={styles.editReviewButton}
+                      onPress={() => {
+                        setIsEditingReview(true);
+                        isFormInteractionRef.current = false; // Reset flag when opening form
+                        setShowReviewForm(true);
+                      }}
+                    >
+                      <Text style={styles.editReviewButtonText}>Edit</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.existingReviewRating}>
+                    <StarRating rating={userExistingReview.rating} size={16} />
+                    <Text style={styles.reviewRating}>({userExistingReview.rating}/5)</Text>
+                  </View>
+                  <Text style={styles.existingReviewComment}>
+                    {userExistingReview.comment}
+                  </Text>
+                </View>
+              )}
+
+              {/* Add Review Section */}
+              {authService.isAuthenticated() && !userExistingReview && (
+                <View style={styles.addReviewSection}>
+                  <TouchableOpacity
+                    style={[styles.addReviewButton, isSubmittingReview && styles.addReviewButtonDisabled]}
+                    onPress={() => {
+                      isFormInteractionRef.current = false; // Reset flag when opening form
+                      setShowReviewForm(true);
+                    }}
+                    disabled={isSubmittingReview}
+                  >
+                    <Text style={styles.addReviewButtonIcon}>✍️</Text>
+                    <Text style={styles.addReviewButtonText}>Write a Review</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {!authService.isAuthenticated() && (
+                <View style={styles.addReviewSection}>
+                  <Text style={styles.loadingText}>Sign in to write a review</Text>
+                </View>
+              )}
+
+              {/* Loading State */}
+              {isLoadingReviews && (
+                <Text style={styles.loadingText}>Loading reviews...</Text>
+              )}
+
+              {/* Recent Reviews from Firestore */}
+              {firestoreReviews.length > 0 && (
+                <View style={styles.recentReviews}>
+                  <Text style={[styles.sectionTitle, { fontSize: 16, marginBottom: 8, marginTop: 16 }]}>
+                    Recent Reviews
+                  </Text>
+                  {firestoreReviews.slice(0, 3).map((review) => (
+                    <View key={review.id} style={styles.reviewItem}>
+                      <View style={styles.reviewHeader}>
+                        <View style={styles.reviewerAvatar}>
+                          <Text style={styles.reviewerAvatarText}>
+                            {review.userDisplayName.charAt(0).toUpperCase()}
+                          </Text>
+                        </View>
+                        <View style={styles.reviewerInfo}>
+                          <Text style={styles.reviewerName}>{review.userDisplayName}</Text>
+                          <Text style={styles.reviewDate}>
+                            {review.createdAt.toLocaleDateString()}
+                          </Text>
+                        </View>
+                        <View style={{ alignItems: 'flex-end' }}>
+                          <StarRating rating={review.rating} size={14} />
+                          <Text style={styles.reviewRating}>({review.rating}/5)</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.reviewComment}>{review.comment}</Text>
+
+                      {review.aspectRatings && Object.keys(review.aspectRatings).length > 0 && (
+                        <View style={styles.reviewAspectsContainer}>
+                          {Object.entries(review.aspectRatings).map(([aspect, rating]) => (
+                            <View key={aspect} style={styles.reviewAspectItem}>
+                              <Text style={styles.reviewAspectName}>{aspect}:</Text>
+                              <StarRating rating={rating} size={12} editable={false} />
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                      
+                      {/* Helpful Button - only for other users' reviews */}
+                      {authService.getCurrentUser()?.uid !== review.userId && (
+                        <TouchableOpacity
+                          style={styles.helpfulButton}
+                          onPress={() => handleMarkHelpful(review.id)}
+                        >
+                          <Text style={styles.helpfulButtonText}>👍 Helpful ({review.helpful})</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  ))}
+                  
+                  {firestoreReviews.length > 3 && (
+                    <Text style={styles.loadingText}>
+                      {firestoreReviews.length - 3} more reviews available
+                    </Text>
+                  )}
+                </View>
+              )}
+
+              {/* Fallback to hardcoded reviews if no Firestore reviews */}
+              {!isLoadingReviews && firestoreReviews.length === 0 && (
+                <View style={styles.recentReviews}>
+                  <Text style={[styles.sectionTitle, { fontSize: 16, marginBottom: 8, marginTop: 16 }]}>
+                    Sample Reviews
+                  </Text>
+                  {reviews.slice(0, 2).map((review) => (
+                    <View key={review.id} style={styles.reviewItem}>
+                      <View style={styles.reviewHeader}>
+                        <View style={styles.reviewerAvatar}>
+                          <Text style={styles.reviewerAvatarText}>{review.avatar}</Text>
+                        </View>
+                        <View style={styles.reviewerInfo}>
+                          <Text style={styles.reviewerName}>{review.author}</Text>
+                          <Text style={styles.reviewDate}>{review.date}</Text>
+                        </View>
+                        <Text style={styles.reviewRating}>⭐ {review.rating}</Text>
+                      </View>
+                      <Text style={styles.reviewComment}>{review.comment}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </CardContent>
+          </Card>
+        </ScrollView>
+      )}
+
+      {/* Review Form Modal - New isolated component */}
+      <ReviewFormModal
+        visible={showReviewForm}
+        userExistingReview={userExistingReview}
+        isSubmittingReview={isSubmittingReview}
+        initialRating={displayUserRating}
+        initialComment={displayUserComment}
+        initialAspectRatings={displayUserAspectRatings}
+        onClose={resetReviewForm}
+        onSubmit={handleSubmitReview}
+        onDelete={userExistingReview ? handleDeleteReview : undefined}
+      />
     </View>
   );
 }
@@ -1209,8 +1795,346 @@ const styles = StyleSheet.create({
   fullScreenMap: {
     flex: 1,
   },
+  mapLoadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+  },
+  mapLoadingText: {
+    fontSize: 16,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
   disabledButton: {
     opacity: 0.7,
     backgroundColor: '#D1D5DB', // gray-300
+  },
+  // Star Rating Styles
+  starContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  starButton: {
+    padding: 4,
+    borderRadius: 4,
+  },
+  star: {
+    fontSize: 20,
+  },
+  // Review Form Styles
+  reviewFormContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  reviewFormHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB', // gray-200
+  },
+  cancelButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    color: '#6B7280', // gray-500
+  },
+  reviewFormTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827', // gray-900
+  },
+  submitButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#EA580C', // orange-600
+    borderRadius: 6,
+  },
+  submitButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  disabledSubmitButton: {
+    opacity: 0.6,
+    backgroundColor: '#D1D5DB', // gray-300
+  },
+  reviewFormContent: {
+    flex: 1,
+    padding: 16,
+  },
+  formSection: {
+    marginBottom: 24,
+  },
+  formSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827', // gray-900
+    marginBottom: 12,
+  },
+  ratingSection: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  commentInput: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB', // gray-300
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    minHeight: 120,
+    textAlignVertical: 'top',
+  },
+  characterCount: {
+    fontSize: 12,
+    color: '#6B7280', // gray-500
+    textAlign: 'right',
+    marginTop: 4,
+  },
+  aspectRatingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6', // gray-100
+  },
+  aspectInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 16,
+  },
+  aspectIcon: {
+    fontSize: 20,
+    marginRight: 12,
+  },
+  aspectText: {
+    flex: 1,
+  },
+  aspectName: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#111827', // gray-900
+  },
+  aspectDescription: {
+    fontSize: 12,
+    color: '#6B7280', // gray-500
+    marginTop: 2,
+  },
+  deleteButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    backgroundColor: '#EF4444', // red-500
+    borderRadius: 8,
+    alignSelf: 'center',
+  },
+  deleteButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  // New Review Section Styles
+  addReviewSection: {
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB', // gray-200
+    backgroundColor: '#F9FAFB', // gray-50
+  },
+  addReviewButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    backgroundColor: '#EA580C', // orange-600
+    borderRadius: 8,
+  },
+  addReviewButtonDisabled: {
+    backgroundColor: '#D1D5DB', // gray-300
+  },
+  addReviewButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  addReviewButtonIcon: {
+    fontSize: 16,
+  },
+  existingReviewSection: {
+    padding: 16,
+    backgroundColor: '#F0FDF4', // green-50
+    borderWidth: 1,
+    borderColor: '#BBF7D0', // green-200
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  existingReviewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  existingReviewTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#166534', // green-800
+  },
+  editReviewButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#EA580C', // orange-600
+    borderRadius: 4,
+  },
+  editReviewButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  existingReviewRating: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 4,
+  },
+  existingReviewComment: {
+    fontSize: 14,
+    color: '#166534', // green-800
+    lineHeight: 20,
+  },
+  helpfulButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#F3F4F6', // gray-100
+    borderRadius: 4,
+    marginTop: 8,
+  },
+  helpfulButtonText: {
+    fontSize: 12,
+    color: '#6B7280', // gray-500
+  },
+  loadingText: {
+    fontSize: 14,
+    color: '#6B7280', // gray-500
+    textAlign: 'center',
+    padding: 16,
+  },
+  // BEGIN nearby - Tab system styles
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB', // gray-200
+    paddingHorizontal: 16,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabButtonActive: {
+    borderBottomColor: '#EA580C', // orange-600
+  },
+  tabText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#6B7280', // gray-500
+  },
+  tabTextActive: {
+    color: '#EA580C', // orange-600
+    fontWeight: '600',
+  },
+  // Gallery grid styles
+  galleryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+  },
+  galleryGridImage: {
+    width: '48%',
+    height: 120,
+    marginBottom: 8,
+    borderRadius: 8,
+  },
+  // Empty state styles
+  emptyStateContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+  },
+  emptyStateText: {
+    fontSize: 16,
+    color: '#9CA3AF', // gray-400
+    fontStyle: 'italic',
+  },
+  // Error styles
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1F2937',
+    flex: 1,
+    textAlign: 'center',
+    marginRight: 24, // Compensate for back button
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  errorButton: {
+    backgroundColor: '#EA580C',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  errorButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  // END nearby
+  reviewAspectsContainer: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    gap: 6,
+  },
+  reviewAspectItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  reviewAspectName: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '500',
   },
 });

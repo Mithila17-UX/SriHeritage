@@ -1,13 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, PermissionsAndroid, Platform } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, PermissionsAndroid, Platform, Modal } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
-import MapView, { Marker, PROVIDER_GOOGLE, Region, Callout, Polyline } from 'react-native-maps';
 import { getSitesFromFirestore, FirestoreSite } from '../services/firebase';
 import { authService } from '../services/auth';
+import { DistanceCalculatorService } from '../services/distanceCalculator';
+import { routingServiceOSM } from '../services/routingServiceOSM';
+import { LeafletPageService } from '../services/leafletPage';
 
 interface HomeScreenProps {
   user: { name: string; email: string } | null;
@@ -47,6 +50,22 @@ interface Site {
 interface RouteCoordinates {
   latitude: number;
   longitude: number;
+}
+
+interface MapConfig {
+  userLocation?: {
+    latitude: number;
+    longitude: number;
+  };
+  destination: {
+    latitude: number;
+    longitude: number;
+    name: string;
+    description?: string;
+  };
+  routeCoordinates: RouteCoordinates[];
+  showFallbackMessage: boolean;
+  fallbackMessage?: string;
 }
 
 const defaultHeritageSites = [
@@ -129,17 +148,14 @@ export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites
   const [heritageSites, setHeritageSites] = useState<Site[]>([]); // Start with empty array
   const [userLocation, setUserLocation] = useState<Location.LocationObject | null>(null);
   const [locationPermission, setLocationPermission] = useState<boolean>(false);
-  const [mapRegion, setMapRegion] = useState<Region>({
-    latitude: 7.8731, // Sri Lanka center
-    longitude: 80.7718,
-    latitudeDelta: 0.5,
-    longitudeDelta: 0.5,
-  });
   const [loading, setLoading] = useState<boolean>(true);
   const [firestoreLoading, setFirestoreLoading] = useState<boolean>(false);
   const [showDirections, setShowDirections] = useState<boolean>(false);
   const [selectedSiteForDirections, setSelectedSiteForDirections] = useState<Site | null>(null);
   const [routeCoordinates, setRouteCoordinates] = useState<RouteCoordinates[]>([]);
+  const [roadDistances, setRoadDistances] = useState<Record<number, { distance: number; isRoad: boolean }>>({});
+  const [mapConfig, setMapConfig] = useState<MapConfig | null>(null);
+  const webViewRef = useRef<WebView>(null);
 
   // Request location permission and get user location
   const requestLocationPermission = async () => {
@@ -175,15 +191,6 @@ export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites
         accuracy: Location.Accuracy.High,
       });
       setUserLocation(location);
-      
-      // Update map region to include user location
-      const newRegion: Region = {
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-        latitudeDelta: 0.1,
-        longitudeDelta: 0.1,
-      };
-      setMapRegion(newRegion);
       
       console.log('Current location updated:', location.coords);
     } catch (error) {
@@ -269,7 +276,105 @@ export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites
     }
   };
 
-  // Calculate distance between two points
+  // Calculate road distances for all heritage sites
+  const calculateRoadDistancesForAllSites = async () => {
+    if (!userLocation || !heritageSites.length) {
+      return;
+    }
+
+    console.log('🗺️ Calculating road distances for', heritageSites.length, 'sites...');
+    const distances: Record<number, { distance: number; isRoad: boolean }> = {};
+
+    for (const site of heritageSites) {
+      const siteLat = site.latitude || site.coordinates?.latitude;
+      const siteLon = site.longitude || site.coordinates?.longitude;
+
+      if (siteLat && siteLon) {
+        try {
+          // Try to get road distance first
+          const roadDistance = await calculateRoadDistance(
+            userLocation.coords.latitude,
+            userLocation.coords.longitude,
+            siteLat,
+            siteLon
+          );
+
+          if (roadDistance !== null) {
+            distances[site.id] = { distance: roadDistance, isRoad: true };
+            console.log(`✅ Road distance for ${site.name}: ${roadDistance.toFixed(1)} km`);
+          } else {
+            // Fallback to direct distance
+            const directDistance = calculateDistance(
+              userLocation.coords.latitude,
+              userLocation.coords.longitude,
+              siteLat,
+              siteLon
+            );
+            distances[site.id] = { distance: directDistance, isRoad: false };
+            console.log(`📍 Direct distance for ${site.name}: ${directDistance.toFixed(1)} km`);
+          }
+        } catch (error) {
+          console.error(`❌ Error calculating distance for ${site.name}:`, error);
+          // Fallback to direct distance
+          const directDistance = calculateDistance(
+            userLocation.coords.latitude,
+            userLocation.coords.longitude,
+            siteLat,
+            siteLon
+          );
+          distances[site.id] = { distance: directDistance, isRoad: false };
+        }
+      }
+    }
+
+    setRoadDistances(distances);
+    console.log('✅ Road distance calculation completed');
+  };
+
+  // Get formatted distance text for a site
+  const getDistanceText = (site: Site): string => {
+    const distanceInfo = roadDistances[site.id];
+    
+    if (distanceInfo) {
+      const suffix = distanceInfo.isRoad ? ' via road' : ' (direct)';
+      return `${distanceInfo.distance.toFixed(1)} km${suffix}`;
+    }
+    
+    // Fallback to calculating direct distance on the fly
+    if (userLocation) {
+      const siteLat = site.latitude || site.coordinates?.latitude;
+      const siteLon = site.longitude || site.coordinates?.longitude;
+      
+      if (siteLat && siteLon) {
+        const distance = calculateDistance(
+          userLocation.coords.latitude,
+          userLocation.coords.longitude,
+          siteLat,
+          siteLon
+        );
+        return `${distance.toFixed(1)} km (direct)`;
+      }
+    }
+    
+    return site.distance || 'Distance unavailable';
+  };
+
+  // Calculate road distance between two points
+  const calculateRoadDistance = async (lat1: number, lon1: number, lat2: number, lon2: number): Promise<number | null> => {
+    try {
+      const roadDistance = await DistanceCalculatorService.calculateRoadDistance(
+        { latitude: lat1, longitude: lon1 },
+        { latitude: lat2, longitude: lon2 },
+        true // Prefer main roads
+      );
+      return roadDistance;
+    } catch (error) {
+      console.error('❌ Error calculating road distance:', error);
+      return null;
+    }
+  };
+
+  // Calculate direct distance between two points (fallback)
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
     const R = 6371; // Earth's radius in kilometers
     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -282,9 +387,33 @@ export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites
     return R * c;
   };
 
-  // Generate route coordinates (simplified - in real app you'd use Google Directions API)
-  const generateRouteCoordinates = (startLat: number, startLon: number, endLat: number, endLon: number): RouteCoordinates[] => {
-    // Create a simple straight line route (in production, use Google Directions API)
+  // Generate route coordinates using OSRM (OpenStreetMap routing)
+  const generateRouteCoordinates = async (startLat: number, startLon: number, endLat: number, endLon: number): Promise<{ coordinates: RouteCoordinates[]; isFallback: boolean; }> => {
+    try {
+      console.log('🗺️ HomeScreen: Getting route from OSRM (OpenStreetMap)...');
+      const route = await routingServiceOSM.getRoute(
+        { latitude: startLat, longitude: startLon },
+        { latitude: endLat, longitude: endLon },
+        { mode: 'driving', fallbackToStraightLine: true }
+      );
+
+      if (route && route.coordinates.length > 0) {
+        console.log('✅ HomeScreen: Route obtained from OSM with', route.coordinates.length, 'points');
+        return {
+          coordinates: route.coordinates.map((coord: any) => ({
+            latitude: coord.latitude,
+            longitude: coord.longitude
+          })),
+          isFallback: route.isFallback || false
+        };
+      } else {
+        console.warn('⚠️ HomeScreen: No route found from OSRM, using fallback');
+      }
+    } catch (error) {
+      console.error('❌ HomeScreen: Error getting route from OSRM:', error);
+    }
+
+    // Fallback: Create a simple straight line route
     const steps = 10;
     const coordinates: RouteCoordinates[] = [];
     
@@ -296,11 +425,12 @@ export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites
       });
     }
     
-    return coordinates;
+    console.log('📍 HomeScreen: Using fallback straight-line route with', coordinates.length, 'points');
+    return { coordinates, isFallback: true };
   };
 
   // Show directions to selected site
-  const showDirectionsToSite = (site: Site) => {
+  const showDirectionsToSite = async (site: Site) => {
     if (!userLocation) {
       Alert.alert('Location Required', 'Please enable location services to get directions.');
       return;
@@ -309,22 +439,57 @@ export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites
     setSelectedSiteForDirections(site);
     setShowDirections(true);
 
-    // Generate route coordinates
-    const route = generateRouteCoordinates(
+    // Generate route coordinates using OSRM (OpenStreetMap routing)
+    const routeResult = await generateRouteCoordinates(
       userLocation.coords.latitude,
       userLocation.coords.longitude,
       site.latitude || site.coordinates?.latitude || 0,
       site.longitude || site.coordinates?.longitude || 0
     );
-    setRouteCoordinates(route);
+    setRouteCoordinates(routeResult.coordinates);
 
-    // Calculate distance
-    const distance = calculateDistance(
+    // Prepare map configuration for WebView
+    const config: MapConfig = {
+      userLocation: {
+        latitude: userLocation.coords.latitude,
+        longitude: userLocation.coords.longitude,
+      },
+      destination: {
+        latitude: site.latitude || site.coordinates?.latitude || 0,
+        longitude: site.longitude || site.coordinates?.longitude || 0,
+        name: site.name,
+        description: site.location,
+      },
+      routeCoordinates: routeResult.coordinates,
+      showFallbackMessage: routeResult.isFallback,
+      fallbackMessage: routeResult.isFallback 
+        ? "OSRM routing unavailable. Showing direct route." 
+        : undefined,
+    };
+
+    setMapConfig(config);
+
+    // Calculate road distance first, fallback to direct distance
+    let distance: number;
+    const roadDistance = await calculateRoadDistance(
       userLocation.coords.latitude,
       userLocation.coords.longitude,
       site.latitude || site.coordinates?.latitude || 0,
       site.longitude || site.coordinates?.longitude || 0
     );
+
+    if (roadDistance !== null) {
+      distance = roadDistance;
+      console.log('📍 Using road distance:', distance, 'km');
+    } else {
+      distance = calculateDistance(
+        userLocation.coords.latitude,
+        userLocation.coords.longitude,
+        site.latitude || site.coordinates?.latitude || 0,
+        site.longitude || site.coordinates?.longitude || 0
+      );
+      console.log('📍 Using direct distance:', distance, 'km');
+    }
 
     // Calculate the bounds to include both user location and destination
     const userLat = userLocation.coords.latitude;
@@ -350,19 +515,6 @@ export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites
     const minDelta = 0.01; // Minimum zoom level
     const finalLatDelta = Math.max(latDelta, minDelta);
     const finalLonDelta = Math.max(lonDelta, minDelta);
-
-    // Update map region to show the entire route
-    const newRegion: Region = {
-      latitude: centerLat,
-      longitude: centerLon,
-      latitudeDelta: finalLatDelta,
-      longitudeDelta: finalLonDelta,
-    };
-
-    // Use setTimeout to ensure the route coordinates are set before updating the region
-    setTimeout(() => {
-      setMapRegion(newRegion);
-    }, 100);
 
     Alert.alert(
       'Directions',
@@ -391,15 +543,8 @@ export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites
     });
 
     if (validSites.length === 0) {
-      // If no valid sites, set a default region around user location
-      if (userLocation) {
-        setMapRegion({
-          latitude: userLocation.coords.latitude,
-          longitude: userLocation.coords.longitude,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
-        });
-      }
+      // If no valid sites, just log that we couldn't fit the map
+      console.log('No valid sites to fit on map');
       return;
     }
 
@@ -424,14 +569,7 @@ export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites
     const latDelta = Math.max((maxLat - minLat) * 1.2, 0.01);
     const lonDelta = Math.max((maxLon - minLon) * 1.2, 0.01);
 
-    const newRegion: Region = {
-      latitude: (minLat + maxLat) / 2,
-      longitude: (minLon + maxLon) / 2,
-      latitudeDelta: latDelta,
-      longitudeDelta: lonDelta,
-    };
-
-    setMapRegion(newRegion);
+    console.log('Map fitted to show all sites and user location');
   };
 
   useEffect(() => {
@@ -449,6 +587,13 @@ export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites
     }
   }, [heritageSites, userLocation, loading]);
 
+  // Calculate road distances when user location and sites are available
+  useEffect(() => {
+    if (userLocation && heritageSites.length > 0 && !loading && !firestoreLoading) {
+      calculateRoadDistancesForAllSites();
+    }
+  }, [userLocation, heritageSites, loading, firestoreLoading]);
+
   // Update location periodically
   useEffect(() => {
     if (locationPermission) {
@@ -459,6 +604,51 @@ export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites
       return () => clearInterval(locationInterval);
     }
   }, [locationPermission]);
+
+  // Generate map config for WebView when we have sites and location
+  useEffect(() => {
+    if (userLocation && heritageSites.length > 0 && !loading && !firestoreLoading) {
+      // For home screen, if we're showing directions to a specific site, show that route
+      if (showDirections && selectedSiteForDirections) {
+        const config: MapConfig = {
+          userLocation: {
+            latitude: userLocation.coords.latitude,
+            longitude: userLocation.coords.longitude
+          },
+          destination: {
+            latitude: selectedSiteForDirections.latitude || selectedSiteForDirections.coordinates?.latitude || 0,
+            longitude: selectedSiteForDirections.longitude || selectedSiteForDirections.coordinates?.longitude || 0,
+            name: selectedSiteForDirections.name,
+            description: selectedSiteForDirections.location
+          },
+          routeCoordinates,
+          showFallbackMessage: routeCoordinates.length === 0,
+          fallbackMessage: "Routing failed. Showing straight line route."
+        };
+        setMapConfig(config);
+        console.log('🗺️ Route map config generated for', selectedSiteForDirections.name);
+      } else {
+        // For overview, show the first heritage site as destination (this creates a general area map)
+        const firstSite = heritageSites[0];
+        const config: MapConfig = {
+          userLocation: {
+            latitude: userLocation.coords.latitude,
+            longitude: userLocation.coords.longitude
+          },
+          destination: {
+            latitude: firstSite.latitude || firstSite.coordinates?.latitude || 0,
+            longitude: firstSite.longitude || firstSite.coordinates?.longitude || 0,
+            name: "Heritage Sites Overview",
+            description: `${heritageSites.length} sites available`
+          },
+          routeCoordinates: [], // No route for overview
+          showFallbackMessage: false
+        };
+        setMapConfig(config);
+        console.log('🗺️ Overview map config generated with', heritageSites.length, 'sites');
+      }
+    }
+  }, [userLocation, heritageSites, routeCoordinates, showDirections, selectedSiteForDirections, loading, firestoreLoading]);
 
   const handleMarkerPress = (site: Site) => {
     console.log('🗺️ HomeScreen: Navigating to site:', {
@@ -510,104 +700,31 @@ export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites
           (() => {
             try {
               return (
-                <MapView
+                <WebView
+                  ref={webViewRef}
                   style={styles.map}
-                  provider={PROVIDER_GOOGLE}
-                  region={mapRegion}
-                  showsUserLocation={true}
-                  showsMyLocationButton={true}
-                  showsCompass={true}
-                  showsScale={true}
-                  onRegionChangeComplete={setMapRegion}
-                >
-                  {/* User Location Marker */}
-                  {userLocation && (
-                    <Marker
-                      coordinate={{
-                        latitude: userLocation.coords.latitude,
-                        longitude: userLocation.coords.longitude,
-                      }}
-                      title="Your Location"
-                      description="You are here"
-                      pinColor="#10B981"
-                    />
+                  source={{ html: mapConfig ? LeafletPageService.generateMapHTML(mapConfig) : '<html><body><p>Loading map...</p></body></html>' }}
+                  originWhitelist={['*']}
+                  allowsInlineMediaPlayback={true}
+                  mediaPlaybackRequiresUserAction={false}
+                  domStorageEnabled={true}
+                  javaScriptEnabled={true}
+                  allowsFullscreenVideo={false}
+                  allowsBackForwardNavigationGestures={false}
+                  startInLoadingState={true}
+                  renderLoading={() => (
+                    <View style={styles.mapLoadingContainer}>
+                      <Text style={styles.mapLoadingText}>🗺️ Loading map...</Text>
+                    </View>
                   )}
-
-                  {/* Heritage Sites Markers */}
-                  {heritageSites.map((site) => {
-                    const latitude = site.latitude || site.coordinates?.latitude;
-                    const longitude = site.longitude || site.coordinates?.longitude;
-                    
-                    // Skip markers with invalid coordinates
-                    if (!latitude || !longitude || latitude === 0 || longitude === 0) {
-                      return null;
-                    }
-
-                    // Calculate distance from user location
-                    let distanceText = 'Distance unavailable';
-                    if (userLocation) {
-                      const distance = calculateDistance(
-                        userLocation.coords.latitude,
-                        userLocation.coords.longitude,
-                        latitude,
-                        longitude
-                      );
-                      distanceText = `${distance.toFixed(1)} km away`;
-                    }
-
-                    return (
-                      <Marker
-                        key={site.id}
-                        coordinate={{
-                          latitude,
-                          longitude,
-                        }}
-                        title={site.name}
-                        description={`${site.location} • ${distanceText}`}
-                        pinColor={getMarkerColor(site)}
-                        onPress={() => handleMarkerPress(site)}
-                      >
-                        <Callout tooltip>
-                          <View style={styles.calloutContainer}>
-                            <View style={styles.calloutHeader}>
-                              <Text style={styles.calloutTitle}>{site.name}</Text>
-                              <Text style={styles.calloutLocation}>{site.location}</Text>
-                              <Text style={styles.calloutDistance}>{distanceText}</Text>
-                            </View>
-                            <View style={styles.calloutContent}>
-                              <Text style={styles.calloutCategory}>{site.category}</Text>
-                              <Text style={styles.calloutRating}>⭐ {site.rating || 4.5}</Text>
-                            </View>
-                            <View style={styles.calloutActions}>
-                              <TouchableOpacity
-                                style={styles.calloutButton}
-                                onPress={() => onNavigateToSite(site)}
-                              >
-                                <Text style={styles.calloutButtonText}>View Details</Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity
-                                style={styles.calloutButton}
-                                onPress={() => showDirectionsToSite(site)}
-                              >
-                                <Text style={styles.calloutButtonText}>Get Directions</Text>
-                              </TouchableOpacity>
-                            </View>
-                          </View>
-                        </Callout>
-                      </Marker>
-                    );
-                  })}
-
-                  {/* Route Polyline */}
-                  {routeCoordinates.length > 0 && (
-                    <Polyline
-                      coordinates={routeCoordinates}
-                      strokeColor="#2563EB"
-                      strokeWidth={3}
-                      lineDashPattern={[1]}
-                    />
-                  )}
-                </MapView>
+                  onError={(syntheticEvent) => {
+                    const { nativeEvent } = syntheticEvent;
+                    console.error('🗺️ WebView error:', nativeEvent);
+                  }}
+                  onLoad={() => {
+                    console.log('🗺️ Map WebView loaded successfully');
+                  }}
+                />
               );
             } catch (error) {
               console.error('Map rendering error:', error);
@@ -675,20 +792,7 @@ export function HomeScreen({ user, onNavigateToSite, favoriteSites, visitedSites
             const isVisited = visitedSites.includes(site.id);
             
             // Calculate distance if user location is available
-            let distanceText = site.distance || 'Distance unavailable';
-            if (userLocation) {
-              const latitude = site.latitude || site.coordinates?.latitude;
-              const longitude = site.longitude || site.coordinates?.longitude;
-              if (latitude && longitude) {
-                const distance = calculateDistance(
-                  userLocation.coords.latitude,
-                  userLocation.coords.longitude,
-                  latitude,
-                  longitude
-                );
-                distanceText = `${distance.toFixed(1)} km away`;
-              }
-            }
+            const distanceText = getDistanceText(site);
             
             return (
               <TouchableOpacity 

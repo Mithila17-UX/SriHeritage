@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, initializeAuth } from 'firebase/auth';
+import { getAuth, initializeAuth, Auth } from 'firebase/auth';
 import { getFirestore, collection, getDocs } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -19,7 +19,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 // Initialize Firebase Auth
-let auth;
+let auth: Auth;
 try {
   auth = initializeAuth(app);
 } catch (error) {
@@ -58,12 +58,67 @@ export interface FirestoreSite {
     latitude: number;
     longitude: number;
   };
+  // Add nearby and subplaces fields
+  nearby?: Array<{
+    id: string;
+    name?: string;
+    distanceKm?: number;
+    category?: string;
+  }>;
+  subplaces?: Array<{
+    id: string;
+    name?: string;
+    distanceKm?: number;
+    category?: string;
+  }>;
+  
+  /** Admin overrides (optional) **/
+  nearby_overrides?: {
+    include?: (string | number)[];
+    exclude?: (string | number)[];
+  };
+  within_overrides?: {
+    include?: (string | number)[];
+    exclude?: (string | number)[];
+  };
 }
+
+// Helper function to ensure user is authenticated before accessing Firestore
+export const ensureAuthenticated = async (timeout = 5000): Promise<boolean> => {
+  if (auth.currentUser) return true;
+
+  return new Promise((resolve) => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (user) {
+        unsubscribe();
+        console.log('👤 Firebase: User authenticated:', user.email);
+        resolve(true);
+      }
+    });
+    
+    // Timeout if auth takes too long
+    setTimeout(() => {
+      unsubscribe();
+      console.log('⏱️ Firebase: Authentication timed out');
+      resolve(false);
+    }, timeout);
+  });
+};
 
 // Function to fetch sites directly from Firestore
 export const getSitesFromFirestore = async (): Promise<FirestoreSite[]> => {
   try {
     console.log('🔄 Fetching sites directly from Firestore...');
+    
+    // Ensure user is authenticated
+    const isAuthenticated = await ensureAuthenticated();
+    
+    if (!isAuthenticated) {
+      console.log('🔒 Firebase: User not authenticated after waiting');
+      throw new Error('User not authenticated');
+    }
+    
+    console.log('👤 Firebase: User authenticated:', auth.currentUser?.email);
     
     const sitesCollection = collection(firestore, 'sites');
     const sitesSnapshot = await getDocs(sitesCollection);
@@ -117,7 +172,10 @@ export const getSitesFromFirestore = async (): Promise<FirestoreSite[]> => {
         coordinates: {
           latitude: data.coordinates?.latitude || data.latitude || 0,
           longitude: data.coordinates?.longitude || data.longitude || 0
-        }
+        },
+        // Include nearby and subplaces data
+        nearby: data.nearby || [],
+        subplaces: data.subplaces || []
       };
       
       console.log('✅ Processed site data:', {

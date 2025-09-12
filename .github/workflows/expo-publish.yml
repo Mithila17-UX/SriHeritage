@@ -1,0 +1,41 @@
+name: Auto Deploy to Expo
+
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    concurrency: expo-deploy
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Install Expo CLI
+        run: npm install -g @expo/cli
+        
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+        
+      # REMOVE this step:
+      # - name: Login to Expo
+      #   run: EXPO_TOKEN=${{ secrets.EXPO_TOKEN }} npx expo login --token $EXPO_TOKEN
+      #   env:
+      #     CI: true
+
+      - name: Deploy to Expo with EAS
+        run: npx eas update --non-interactive --branch dev --message "Automated deploy from CI"
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}

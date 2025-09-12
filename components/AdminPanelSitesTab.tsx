@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Image } fr
 import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
 import { collection, getDocs, doc, deleteDoc, onSnapshot } from 'firebase/firestore';
-import { firestore } from '../services/firebase';
+import { firestore, auth } from '../services/firebase';
 import { databaseService } from '../services/database';
 
 interface Site {
@@ -35,20 +35,51 @@ export function AdminPanelSitesTab({ onEditSite, onManageGallery }: AdminPanelSi
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(firestore, 'sites'),
-      (snapshot) => {
-        const sitesData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as Site[];
-        setSites(sitesData);
-        setLoading(false);
-      },
-      (error) => {
-        console.error('Error listening to sites:', error);
-        loadSitesFromSQLite();
-      }
-    );
+    let unsubscribe = () => {};
+    
+    // Check if user is authenticated before setting up listeners
+    if (auth.currentUser) {
+      unsubscribe = onSnapshot(collection(firestore, 'sites'),
+        (snapshot) => {
+          const sitesData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          })) as Site[];
+          setSites(sitesData);
+          setLoading(false);
+        },
+        (error) => {
+          console.error('Error listening to sites:', error);
+          loadSitesFromSQLite();
+        }
+      );
+    } else {
+      // If not authenticated, set up auth state listener and use SQLite for now
+      loadSitesFromSQLite();
+      
+      const authUnsubscribe = auth.onAuthStateChanged((user) => {
+        if (user) {
+          // User is now signed in, set up Firestore listener
+          unsubscribe = onSnapshot(collection(firestore, 'sites'),
+            (snapshot) => {
+              const sitesData = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+              })) as Site[];
+              setSites(sitesData);
+              setLoading(false);
+            },
+            (error) => {
+              console.error('Error listening to sites:', error);
+              // Already loaded from SQLite, no need to reload
+            }
+          );
+          
+          // No need to continue listening for auth changes
+          authUnsubscribe();
+        }
+      });
+    }
 
     return () => unsubscribe();
   }, []);
@@ -56,11 +87,28 @@ export function AdminPanelSitesTab({ onEditSite, onManageGallery }: AdminPanelSi
   const loadSitesFromSQLite = async () => {
     try {
       const localSites = await databaseService.getAllSites();
-      setSites(localSites.map(site => ({
-        ...site,
+      // Convert SQLite sites to the format required by the Site interface
+      const formattedSites: Site[] = localSites.map(site => ({
         id: site.id.toString(),
-        gallery: site.gallery ? JSON.parse(site.gallery) : []
-      })));
+        name: site.name || '',
+        description: site.description || '',
+        location: site.location || '',
+        latitude: site.latitude || 0,
+        longitude: site.longitude || 0,
+        category: site.category || '',
+        district: site.district || '',
+        distance: site.distance || '',
+        rating: site.rating || 0,
+        image: site.image || site.image_url || '',
+        openingHours: site.openingHours || site.visiting_hours || '',
+        entranceFee: site.entranceFee || site.entry_fee || '',
+        gallery: site.gallery ? (typeof site.gallery === 'string' ? JSON.parse(site.gallery) : site.gallery) : [],
+        coordinates: {
+          latitude: site.coordinates?.latitude || site.latitude || 0,
+          longitude: site.coordinates?.longitude || site.longitude || 0
+        }
+      }));
+      setSites(formattedSites);
     } catch (error) {
       console.error('Error loading sites from SQLite:', error);
       Alert.alert('Error', 'Failed to load sites');

@@ -46,6 +46,7 @@ export function MainApp({ user, onLogout }: MainAppProps) {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('dashboard');
   const [selectedSite, setSelectedSite] = useState<SiteData | null>(null);
+  const [selectedSiteId, setSelectedSiteId] = useState<string | number | null>(null);
   const [favoriteSites, setFavoriteSites] = useState<number[]>([]);
   const [visitedSites, setVisitedSites] = useState<number[]>([1, 3]); // Mock visited sites
   const [plannedSites, setPlannedSites] = useState<number[]>([]);
@@ -53,12 +54,20 @@ export function MainApp({ user, onLogout }: MainAppProps) {
 
   const handleNavigateToSite = (site: SiteData) => {
     setSelectedSite(site);
+    setSelectedSiteId(null);
+    setCurrentScreen('site-info');
+  };
+  
+  const handleNavigateToSiteById = (siteId: string | number) => {
+    setSelectedSiteId(siteId);
+    setSelectedSite(null);
     setCurrentScreen('site-info');
   };
 
   const handleBackFromSite = () => {
     setCurrentScreen(activeTab);
     setSelectedSite(null);
+    setSelectedSiteId(null);
   };
 
   const toggleFavorite = (siteId: number) => {
@@ -91,7 +100,7 @@ export function MainApp({ user, onLogout }: MainAppProps) {
             visitedSites={visitedSites}
             favoriteSites={favoriteSites}
             onNavigateToSite={handleNavigateToSite}
-            onNavigateToScreen={setCurrentScreen}
+            onNavigateToScreen={handleNavigateToScreen}
           />
         );
       case 'home':
@@ -127,18 +136,36 @@ export function MainApp({ user, onLogout }: MainAppProps) {
           />
         );
       case 'site-info':
-        return selectedSite ? (
-          <SiteInformationPage
-            site={selectedSite}
-            isFavorite={favoriteSites.includes(selectedSite.id)}
-            isVisited={visitedSites.includes(selectedSite.id)}
-            isPlanned={plannedSites.includes(selectedSite.id)}
-            offlineMode={offlineMode}
-            onToggleFavorite={() => toggleFavorite(selectedSite.id)}
-            onVisitStatusChange={(status) => handleVisitStatusChange(selectedSite.id, status)}
-            onBack={handleBackFromSite}
-          />
-        ) : null;
+        if (selectedSite) {
+          return (
+            <SiteInformationPage
+              site={selectedSite}
+              isFavorite={favoriteSites.includes(selectedSite.id)}
+              isVisited={visitedSites.includes(selectedSite.id)}
+              isPlanned={plannedSites.includes(selectedSite.id)}
+              offlineMode={offlineMode}
+              onToggleFavorite={() => toggleFavorite(selectedSite.id)}
+              onVisitStatusChange={(status) => handleVisitStatusChange(selectedSite.id, status)}
+              onBack={handleBackFromSite}
+              onNavigateToSite={handleNavigateToSiteById}
+            />
+          );
+        } else if (selectedSiteId) {
+          return (
+            <SiteInformationPage
+              siteId={selectedSiteId}
+              isFavorite={favoriteSites.includes(Number(selectedSiteId))}
+              isVisited={visitedSites.includes(Number(selectedSiteId))}
+              isPlanned={plannedSites.includes(Number(selectedSiteId))}
+              offlineMode={offlineMode}
+              onToggleFavorite={() => toggleFavorite(Number(selectedSiteId))}
+              onVisitStatusChange={(status) => handleVisitStatusChange(Number(selectedSiteId), status)}
+              onBack={handleBackFromSite}
+              onNavigateToSite={handleNavigateToSiteById}
+            />
+          );
+        }
+        return null;
       default:
         return (
           <DashboardScreen 
@@ -146,7 +173,7 @@ export function MainApp({ user, onLogout }: MainAppProps) {
             visitedSites={visitedSites}
             favoriteSites={favoriteSites}
             onNavigateToSite={handleNavigateToSite}
-            onNavigateToScreen={setCurrentScreen}
+            onNavigateToScreen={handleNavigateToScreen}
           />
         );
     }
@@ -155,6 +182,17 @@ export function MainApp({ user, onLogout }: MainAppProps) {
   const handleTabChange = (tab: TabType) => {
     setActiveTab(tab);
     setCurrentScreen(tab);
+  };
+
+  // Helper function to handle screen navigation with proper type conversion
+  const handleNavigateToScreen = (screen: string) => {
+    // Convert string to ScreenType, defaulting to 'dashboard' if invalid
+    const validScreens: ScreenType[] = ['dashboard', 'home', 'places', 'chat', 'forum', 'profile', 'site-info'];
+    const targetScreen = validScreens.includes(screen as ScreenType) ? (screen as ScreenType) : 'dashboard';
+    setCurrentScreen(targetScreen);
+    if (targetScreen !== 'site-info') {
+      setActiveTab(targetScreen as TabType);
+    }
   };
 
   // Don't show bottom navigation on site info page

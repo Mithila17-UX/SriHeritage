@@ -1,5 +1,6 @@
 import * as React from "react";
 import { View, Text, StyleSheet, ViewStyle, TextStyle } from "react-native";
+import { wrapTextChildren } from "./text-wrapper";
 
 interface CardProps {
   children: React.ReactNode;
@@ -46,7 +47,7 @@ interface CardFooterProps {
 const Card: React.FC<CardProps> = ({ children, style, ...props }) => {
   return (
     <View style={[styles.card, style]} {...props}>
-      {children}
+      {wrapTextChildren(children)}
     </View>
   );
 };
@@ -54,7 +55,7 @@ const Card: React.FC<CardProps> = ({ children, style, ...props }) => {
 const CardHeader: React.FC<CardHeaderProps> = ({ children, style, ...props }) => {
   return (
     <View style={[styles.cardHeader, style]} {...props}>
-      {children}
+      {wrapTextChildren(children)}
     </View>
   );
 };
@@ -62,7 +63,7 @@ const CardHeader: React.FC<CardHeaderProps> = ({ children, style, ...props }) =>
 const CardContent: React.FC<CardContentProps> = ({ children, style, ...props }) => {
   return (
     <View style={[styles.cardContent, style]} {...props}>
-      {children}
+      {wrapTextChildren(children)}
     </View>
   );
 };
@@ -86,7 +87,7 @@ const CardDescription: React.FC<CardDescriptionProps> = ({ children, style, ...p
 const CardAction: React.FC<CardActionProps> = ({ children, style, ...props }) => {
   return (
     <View style={[styles.cardAction, style]} {...props}>
-      {children}
+      {wrapTextChildren(children)}
     </View>
   );
 };
@@ -94,7 +95,7 @@ const CardAction: React.FC<CardActionProps> = ({ children, style, ...props }) =>
 const CardFooter: React.FC<CardFooterProps> = ({ children, style, ...props }) => {
   return (
     <View style={[styles.cardFooter, style]} {...props}>
-      {children}
+      {wrapTextChildren(children)}
     </View>
   );
 };

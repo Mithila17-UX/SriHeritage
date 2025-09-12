@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Card, CardContent, CardHeader } from './ui/card';
 import { Checkbox } from './ui/checkbox';
+import { useCustomAlert } from './ui/custom-alert';
 
 interface SignupScreenProps {
-  onSignup: (name: string, email: string, password: string) => void;
+  onSignup: (name: string, email: string, password: string) => Promise<void>;
   onNavigateToLogin: () => void;
 }
 
@@ -19,14 +20,59 @@ export function SignupScreen({ onSignup, onNavigateToLogin }: SignupScreenProps)
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [agreeToTerms, setAgreeToTerms] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = () => {
-    if (fullName && email && password && confirmPassword && agreeToTerms) {
-      if (password === confirmPassword) {
-        onSignup(fullName, email, password);
-      } else {
-        Alert.alert('Error', 'Passwords do not match');
-      }
+  const { showError, showWarning, AlertComponent } = useCustomAlert();
+
+  const handleSubmit = async () => {
+    // Clear previous errors
+    setError(null);
+
+    // Validation
+    if (!fullName.trim()) {
+      showError('Missing Information', 'Please enter your full name');
+      return;
+    }
+
+    if (!email.trim()) {
+      showError('Missing Information', 'Please enter your email address');
+      return;
+    }
+
+    if (!password) {
+      showError('Missing Information', 'Please create a password');
+      return;
+    }
+
+    if (!confirmPassword) {
+      showError('Missing Information', 'Please confirm your password');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      showError('Password Mismatch', 'The passwords you entered do not match. Please try again.');
+      return;
+    }
+
+    if (password.length < 6) {
+      showWarning('Weak Password', 'Password should be at least 6 characters long for better security.');
+      return;
+    }
+
+    if (!agreeToTerms) {
+      showWarning('Terms Required', 'Please agree to the Terms of Service and Privacy Policy to continue.');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      await onSignup(fullName.trim(), email.trim(), password);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sign up failed');
+      showError('Sign Up Failed', err instanceof Error ? err.message : 'An unexpected error occurred. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -139,12 +185,21 @@ export function SignupScreen({ onSignup, onNavigateToLogin }: SignupScreenProps)
               </View>
             </View>
             
+            {error && (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            )}
+
             <Button
               onPress={handleSubmit}
-              disabled={!agreeToTerms}
-              style={[styles.signupButton, !agreeToTerms && styles.signupButtonDisabled]}
+              disabled={!agreeToTerms || isLoading}
+              style={[
+                styles.signupButton, 
+                (!agreeToTerms || isLoading) && styles.signupButtonDisabled
+              ]}
             >
-              Sign Up
+              {isLoading ? 'Creating Account...' : 'Sign Up'}
             </Button>
           </View>
           
@@ -156,6 +211,7 @@ export function SignupScreen({ onSignup, onNavigateToLogin }: SignupScreenProps)
           </View>
         </CardContent>
       </Card>
+      <AlertComponent />
     </ScrollView>
   );
 }
@@ -312,6 +368,19 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     fontSize: 14,
     lineHeight: 20,
+  },
+  errorContainer: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#FECACA',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  errorText: {
+    color: '#DC2626',
+    fontSize: 14,
+    textAlign: 'center',
   },
   signupButton: {
     backgroundColor: '#0EA5E9', // A vibrant sky blue for the main button
