@@ -1296,6 +1296,17 @@ export function SiteInformationPage({
                         </View>
                       </View>
                       <Text style={styles.reviewComment}>{review.comment}</Text>
+
+                      {review.aspectRatings && Object.keys(review.aspectRatings).length > 0 && (
+                        <View style={styles.reviewAspectsContainer}>
+                          {Object.entries(review.aspectRatings).map(([aspect, rating]) => (
+                            <View key={aspect} style={styles.reviewAspectItem}>
+                              <Text style={styles.reviewAspectName}>{aspect}:</Text>
+                              <StarRating rating={rating} size={12} editable={false} />
+                            </View>
+                          ))}
+                        </View>
+                      )}
                       
                       {/* Helpful Button - only for other users' reviews */}
                       {authService.getCurrentUser()?.uid !== review.userId && (
@@ -2109,4 +2120,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   // END nearby
+  reviewAspectsContainer: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    gap: 6,
+  },
+  reviewAspectItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  reviewAspectName: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
 });
